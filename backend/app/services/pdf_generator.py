@@ -162,6 +162,15 @@ def get_kdigo_classification(egfr: float | None, acr: float | None) -> dict:
             color = "red"
             riesgo = "Riesgo Muy Alto"
             recomendacion = "TFG muy baja (insuficiencia renal avanzada). Requiere atención médica/nefrológica especializada con urgencia para manejo de complicaciones."
+    elif a_cat and not g_cat:
+        if a_cat == "A1":
+            color = "green"
+            riesgo = "Normal"
+            recomendacion = "Resultado normal. Siga con hábitos saludables y buena hidratación."
+        else:
+            color = "yellow"
+            riesgo = "Alterado"
+            recomendacion = "Se requiere una segunda determinación en 3 meses. Si esta es su segunda determinación con valores altos, busque valoración médica."
 
     return {
         "g_cat": g_cat,
