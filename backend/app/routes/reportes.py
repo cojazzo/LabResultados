@@ -77,9 +77,12 @@ async def generar_reporte(
             detail=str(e)
         )
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(error_details)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generando PDF: {str(e)}"
+            detail=f"Error generando PDF: {str(e)}. TRACEBACK: {error_details}"
         )
 
 @router.post("/generar-masivo", response_model=List[ReporteResponse])
