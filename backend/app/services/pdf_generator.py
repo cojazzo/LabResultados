@@ -668,7 +668,8 @@ async def generate_report_pdf(db: AsyncSession, paciente_id: int, resultado_ids:
         if res.observaciones and "Petición No." in res.observaciones:
             parts = res.observaciones.split("Petición No.")
             if len(parts) > 1:
-                folio_extraido = parts[1].strip()
+                folio_raw = parts[1].strip()
+                folio_extraido = folio_raw.replace("/", "-").replace("\\", "-")
                 break
 
     # 4. Buscar si ya existe un reporte no autorizado
