@@ -53,21 +53,6 @@ class Paciente(Base):
     resultados = relationship("Resultado", back_populates="paciente")
     reportes = relationship("ReporteGenerado", back_populates="paciente")
 
-class Medico(Base):
-    __tablename__ = "medicos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    cedula = Column(String, unique=True, index=True, nullable=False)
-    nombre = Column(String, nullable=False)
-    apellido = Column(String, nullable=True)
-    especialidad = Column(String, nullable=True)
-    telefono = Column(String, nullable=True)
-    email = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-    resultados = relationship("Resultado", back_populates="medico")
-
 class Quimico(Base):
     __tablename__ = "quimicos"
 
@@ -119,7 +104,6 @@ class Resultado(Base):
     id = Column(Integer, primary_key=True, index=True)
     paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False, index=True)
     prueba_id = Column(Integer, ForeignKey("pruebas.id"), nullable=False, index=True)
-    medico_id = Column(Integer, ForeignKey("medicos.id"), nullable=False, index=True)
     lote_id = Column(Integer, ForeignKey("lotes_carga.id"), nullable=False, index=True)
     valor = Column(Numeric(precision=10, scale=2), nullable=True)
     valor_texto = Column(String, nullable=True)
@@ -138,7 +122,6 @@ class Resultado(Base):
 
     paciente = relationship("Paciente", back_populates="resultados")
     prueba = relationship("Prueba", back_populates="resultados")
-    medico = relationship("Medico", back_populates="resultados")
     lote = relationship("Lote", back_populates="resultados")
     reporte_resultados = relationship("ReporteResultado", back_populates="resultado")
 

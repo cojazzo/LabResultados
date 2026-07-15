@@ -15,7 +15,7 @@ from app.routes.resultados import router as resultados_router
 from app.routes.reportes import router as reportes_router
 from app.routes.envios import router as envios_router
 from app.routes.dashboard import router as dashboard_router
-from app.routes.catalogos import pruebas_router, medicos_router
+from app.routes.catalogos import pruebas_router
 from app.routes.pacientes import router as pacientes_router
 from app.routes.automation import router as automation_router
 from app.routes.quimicos import router as quimicos_router
@@ -102,7 +102,7 @@ app.include_router(envios_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(pruebas_router, prefix="/api")
 app.include_router(pacientes_router, prefix="/api")
-app.include_router(medicos_router, prefix="/api")
+
 app.include_router(automation_router, prefix="/api")
 app.include_router(quimicos_router, prefix="/api")
 

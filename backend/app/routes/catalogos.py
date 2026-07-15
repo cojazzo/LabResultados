@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.database import get_db
-from app.models import Prueba, Medico, User
+from app.models import Prueba, User
 from app.core.security import get_current_user
 from pydantic import BaseModel
 from typing import List, Optional
@@ -12,7 +12,6 @@ from decimal import Decimal
 pruebas_router = APIRouter(prefix="/catalogo", tags=["Catálogo de Pruebas"])
 
 # Router para Médicos
-medicos_router = APIRouter(prefix="/medicos", tags=["Médicos"])
 
 # Pydantic Schemas
 class PruebaCreateUpdate(BaseModel):
@@ -39,18 +38,6 @@ class PruebaResponse(BaseModel):
     valor_critico_max: Optional[float] = None
     metodo: Optional[str] = None
     activa: bool
-
-    class Config:
-        from_attributes = True
-
-class MedicoResponse(BaseModel):
-    id: int
-    cedula: str
-    nombre: str
-    apellido: Optional[str] = None
-    especialidad: Optional[str] = None
-    telefono: Optional[str] = None
-    email: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -201,15 +188,4 @@ async def update_prueba(
 
 # --- Endpoints de Médicos ---
 
-@medicos_router.get("", response_model=List[MedicoResponse])
-async def list_medicos(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Lista todos los médicos registrados.
-    """
-    stmt = select(Medico).order_by(Medico.apellido, Medico.nombre)
-    result = await db.execute(stmt)
-    medicos = result.scalars().all()
-    return medicos
+

@@ -17,7 +17,6 @@ router = APIRouter(prefix="/envios", tags=["Envíos"])
 class EnvioEmailRequest(BaseModel):
     reporte_id: int
     destinatario_email: EmailStr
-    copia_medico: Optional[bool] = False
 
 class EnvioWhatsAppRequest(BaseModel):
     reporte_id: int
@@ -37,9 +36,9 @@ class EnvioResponse(BaseModel):
         from_attributes = True
 
 # --- Helper task for background sending ---
-async def send_email_background(db_factory, r_id, email, copia, user_id):
+async def send_email_background(db_factory, r_id, email, user_id):
     async with db_factory() as db:
-        await send_report_email(db, r_id, email, copia, user_id)
+        await send_report_email(db, r_id, email, user_id)
 
 async def send_whatsapp_background(db_factory, r_id, phone, user_id):
     async with db_factory() as db:
@@ -87,7 +86,6 @@ async def enviar_email(
         AsyncSessionLocal,
         req.reporte_id,
         req.destinatario_email,
-        req.copia_medico,
         current_user.id
     )
 
@@ -232,7 +230,6 @@ async def reintentar_envio_route(
             AsyncSessionLocal,
             envio.reporte_id,
             envio.destinatario,
-            False,
             current_user.id
         )
     elif envio.canal == "whatsapp":

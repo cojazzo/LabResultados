@@ -57,7 +57,7 @@ EMAIL_HTML_TEMPLATE = """
 </html>
 """
 
-async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_email: str, copia_medico: bool, enviado_por: int) -> Envio:
+async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_email: str, enviado_por: int) -> Envio:
     """
     Envía el PDF de un reporte por correo electrónico.
     Soporta modo Mock guardando el correo como archivo local.

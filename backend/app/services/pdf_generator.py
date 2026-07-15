@@ -277,7 +277,6 @@ def generate_reportlab_pdf(pdf_path, context):
     
     # Paciente y médico
     paciente = context['paciente']
-    medico = context['medico']
     
     dob = paciente.fecha_nacimiento
     ft_date = datetime.strptime(context['fecha_toma'], "%d/%m/%Y").date() if isinstance(context['fecha_toma'], str) else context['fecha_toma']
@@ -652,15 +651,13 @@ async def generate_report_pdf(db: AsyncSession, paciente_id: int, resultado_ids:
     resultados_res = await db.execute(
         select(Resultado)
         .where(Resultado.id.in_(resultado_ids))
-        .options(selectinload(Resultado.prueba), selectinload(Resultado.medico))
+        .options(selectinload(Resultado.prueba))
     )
     resultados = resultados_res.scalars().all()
     if not resultados:
         raise ValueError("No se encontraron resultados para incluir en el reporte")
 
-    # Tomar la fecha de toma más representativa y el médico
     fecha_toma = resultados[0].fecha_toma
-    medico = resultados[0].medico
 
     # 3. Extraer folio de observaciones
     folio_extraido = None
@@ -668,7 +665,7 @@ async def generate_report_pdf(db: AsyncSession, paciente_id: int, resultado_ids:
         if res.observaciones and "Petición No." in res.observaciones:
             parts = res.observaciones.split("Petición No.")
             if len(parts) > 1:
-                folio_raw = parts[1].strip()
+                folio_raw = parts[1].split("|")[0].strip()
                 folio_extraido = folio_raw.replace("/", "-").replace("\\", "-")
                 break
 
@@ -720,7 +717,6 @@ async def generate_report_pdf(db: AsyncSession, paciente_id: int, resultado_ids:
         "folio": folio,
         "fecha_emision": datetime.now().strftime("%d/%m/%Y %H:%M"),
         "paciente": paciente,
-        "medico": medico,
         "fecha_toma": fecha_toma.strftime("%d/%m/%Y"),
         "resultados": resultados,
         "usuario_nombre": usuario_nombre

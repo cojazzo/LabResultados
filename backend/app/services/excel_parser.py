@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models import Lote, Paciente, Medico, Prueba, Resultado
+from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion
 from app.utils.curp_validator import match_patient_identifier
 
@@ -69,14 +69,13 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
         "telefono_paciente": ["telefono_paciente", "telefono", "paciente_telefono"],
         "email_paciente": ["email_paciente", "email", "paciente_email"],
         "whatsapp_paciente": ["whatsapp_paciente", "whatsapp", "paciente_whatsapp"],
-        "cedula_medico": ["cedula_medico", "cedula", "medico_cedula"],
-        "nombre_medico": ["nombre_medico", "medico", "medico_nombre", "nombre_completo_medico"],
-        "especialidad_medico": ["especialidad_medico", "especialidad", "medico_especialidad"],
+
         "codigo_prueba": ["codigo_prueba", "codigo", "prueba_codigo", "prueba"],
         "valor": ["valor", "resultado", "resultado_valor"],
         "fecha_toma": ["fecha_toma", "toma", "fecha_muestra"],
         "fecha_resultado": ["fecha_resultado", "fecha_analisis", "fecha_reporte"],
-        "observaciones": ["observaciones", "notas", "comentarios"]
+        "observaciones": ["observaciones", "notas", "comentarios"],
+        "numero": ["numero", "n_mero", "numero_de_peticion", "folio", "peticion"]
     }
 
     # Resolver columnas
@@ -95,7 +94,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
     # Validar columnas requeridas
     required_canonicals = [
         "identificacion_paciente", "nombre_paciente", "apellido_paciente",
-        "cedula_medico", "nombre_medico", "codigo_prueba", "valor", "fecha_toma"
+        "codigo_prueba", "valor", "fecha_toma"
     ]
     missing_required = [req for req in required_canonicals if resolved_cols[req] is None]
     if missing_required:
@@ -117,8 +116,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
         paciente_id_val = str(row[resolved_cols["identificacion_paciente"]]).strip() if pd.notna(row[resolved_cols["identificacion_paciente"]]) else ""
         pac_nombre = str(row[resolved_cols["nombre_paciente"]]).strip() if pd.notna(row[resolved_cols["nombre_paciente"]]) else ""
         pac_apellido = str(row[resolved_cols["apellido_paciente"]]).strip() if pd.notna(row[resolved_cols["apellido_paciente"]]) else ""
-        med_cedula = str(row[resolved_cols["cedula_medico"]]).strip() if pd.notna(row[resolved_cols["cedula_medico"]]) else ""
-        med_nombre = str(row[resolved_cols["nombre_medico"]]).strip() if pd.notna(row[resolved_cols["nombre_medico"]]) else ""
+
         prueba_codigo = str(row[resolved_cols["codigo_prueba"]]).strip() if pd.notna(row[resolved_cols["codigo_prueba"]]) else ""
         
         # Aplicar matching lógico
@@ -137,10 +135,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
             fila_errores.append({"columna": "Nombre_Paciente", "error": "El nombre del paciente es obligatorio", "valor": ""})
         if not pac_apellido:
             fila_errores.append({"columna": "Apellido_Paciente", "error": "El apellido del paciente es obligatorio", "valor": ""})
-        if not med_cedula:
-            fila_errores.append({"columna": "Cedula_Medico", "error": "La cédula del médico es obligatoria", "valor": ""})
-        if not med_nombre:
-            fila_errores.append({"columna": "Nombre_Medico", "error": "El nombre del médico es obligatorio", "valor": ""})
+
         if not prueba_codigo:
             fila_errores.append({"columna": "Codigo_Prueba", "error": "El código de la prueba es obligatorio", "valor": ""})
         if not valor_raw:
@@ -199,31 +194,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
             if pac_mail: paciente.email = pac_mail
             if pac_wa: paciente.whatsapp = pac_wa
 
-        # Procesar Médico
-        medico_res = await db.execute(select(Medico).where(Medico.cedula == med_cedula))
-        medico = medico_res.scalar_one_or_none()
-        
-        med_esp = str(row[resolved_cols["especialidad_medico"]]).strip() if resolved_cols["especialidad_medico"] and pd.notna(row[resolved_cols["especialidad_medico"]]) else None
 
-        if not medico:
-            med_ap = ""
-            med_parts = med_nombre.split(" ", 1)
-            if len(med_parts) > 1:
-                med_nom = med_parts[0]
-                med_ap = med_parts[1]
-            else:
-                med_nom = med_nombre
-
-            medico = Medico(
-                cedula=med_cedula,
-                nombre=med_nom,
-                apellido=med_ap,
-                especialidad=med_esp
-            )
-            db.add(medico)
-            await db.flush()
-        else:
-            if med_esp: medico.especialidad = med_esp
 
         # Parsear Valor y calcular interpretación
         valor_num = None
@@ -246,7 +217,19 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
 
         # Fechas y observaciones adicionales
         fecha_res_val = parse_date(row[resolved_cols["fecha_resultado"]]) if resolved_cols["fecha_resultado"] else None
-        obs_val = str(row[resolved_cols["observaciones"]]).strip() if resolved_cols["observaciones"] and pd.notna(row[resolved_cols["observaciones"]]) else None
+        
+        obs_parts = []
+        if resolved_cols["numero"] and pd.notna(row[resolved_cols["numero"]]):
+            num_val = str(row[resolved_cols["numero"]]).strip()
+            if num_val:
+                obs_parts.append(f"Petición No. {num_val}")
+        
+        if resolved_cols["observaciones"] and pd.notna(row[resolved_cols["observaciones"]]):
+            obs_raw = str(row[resolved_cols["observaciones"]]).strip()
+            if obs_raw:
+                obs_parts.append(obs_raw)
+                
+        obs_val = " | ".join(obs_parts) if obs_parts else None
 
         # PREVENCIÓN DE DUPLICADOS
         res_stmt = select(Resultado).where(
@@ -259,7 +242,6 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
 
         if resultado:
             resultado.lote_id = lote.id
-            resultado.medico_id = medico.id
             resultado.valor = Decimal(str(valor_num)) if valor_num is not None else None
             resultado.valor_texto = valor_text
             resultado.interpretacion = interpretacion
@@ -269,7 +251,6 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
             resultado = Resultado(
                 lote_id=lote.id,
                 paciente_id=paciente.id,
-                medico_id=medico.id,
                 prueba_id=prueba.id,
                 valor=Decimal(str(valor_num)) if valor_num is not None else None,
                 valor_texto=valor_text,
@@ -351,18 +332,6 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
         if col not in metadata_columns_in_df and col.upper() in ["CRTS", "CRE01", "ALBOR", "ACR"]
     ]
     
-    # Obtener o crear Médico Genérico para registros del sistema externo
-    medico_res = await db.execute(select(Medico).where(Medico.cedula == "99999999"))
-    medico = medico_res.scalar_one_or_none()
-    if not medico:
-        medico = Medico(
-            cedula="99999999",
-            nombre="Sistema",
-            apellido="Externo",
-            especialidad="Laboratorio Externo"
-        )
-        db.add(medico)
-        await db.flush()
 
     # Cargar catálogo de pruebas en caché de memoria para optimizar
     pruebas_result = await db.execute(select(Prueba))
@@ -490,7 +459,6 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             if resultado:
                 # Actualizar
                 resultado.lote_id = lote.id
-                resultado.medico_id = medico.id
                 resultado.valor = Decimal(str(valor_num)) if valor_num is not None else None
                 resultado.valor_texto = valor_text
                 resultado.interpretacion = interpretacion
@@ -501,7 +469,6 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
                 resultado = Resultado(
                     lote_id=lote.id,
                     paciente_id=paciente.id,
-                    medico_id=medico.id,
                     prueba_id=prueba.id,
                     valor=Decimal(str(valor_num)) if valor_num is not None else None,
                     valor_texto=valor_text,
@@ -599,7 +566,6 @@ async def calculate_missing_acr(db: AsyncSession, lote_id: int):
                     new_acr = Resultado(
                         lote_id=lote_id,
                         paciente_id=paciente_id,
-                        medico_id=ref_res.medico_id,
                         prueba_id=acr_prueba.id,
                         valor=Decimal(str(round(acr_val, 2))),
                         interpretacion="normal",

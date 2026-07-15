@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   getResultados,
   getPruebas,
-  getMedicos,
   getQuimicosActivos,
   generarReporte,
   enviarEmail,
@@ -25,6 +24,41 @@ import Badge from '../components/Badge.jsx'
 import Modal from '../components/Modal.jsx'
 import Pagination from '../components/Pagination.jsx'
 
+// Helper para Sexo
+const resolveSex = (paciente) => {
+  const s = String(paciente.sexo || '').trim().toUpperCase();
+  if (["F", "FEMENINO", "MUJER"].includes(s)) return true;
+  if (["M", "MASCULINO", "HOMBRE"].includes(s)) return false;
+  const ident = String(paciente.identificacion || '').trim().toUpperCase();
+  if (ident.length >= 11) {
+    if (ident[10] === 'M') return true;
+    if (ident[10] === 'H') return false;
+  }
+  return false;
+};
+
+// Helper para TFG
+const calculateEgfr = (scr, age, isFemale) => {
+  if (age < 25) {
+    const calcAge = Math.max(age, 2.0);
+    const lnQ = isFemale 
+      ? 3.080 + 0.177 * calcAge - 0.223 * Math.log(calcAge) - 0.00596 * (calcAge ** 2) + 0.0000686 * (calcAge ** 3)
+      : 3.200 + 0.259 * calcAge - 0.543 * Math.log(calcAge) - 0.00763 * (calcAge ** 2) + 0.0000790 * (calcAge ** 3);
+    const qUmol = Math.exp(lnQ);
+    const qMgdl = qUmol / 88.42;
+    const ratio = scr / qMgdl;
+    return ratio < 1.0 ? 107.3 * (ratio ** -0.322) : 107.3 * (ratio ** -1.132);
+  } else {
+    const kappa = isFemale ? 0.7 : 0.9;
+    const alpha = isFemale ? -0.241 : -0.302;
+    const genderMult = isFemale ? 1.012 : 1.0;
+    const term1 = Math.pow(Math.min(scr / kappa, 1.0), alpha);
+    const term2 = Math.pow(Math.max(scr / kappa, 1.0), -1.200);
+    const term3 = Math.pow(0.9938, age);
+    return 142 * term1 * term2 * term3 * genderMult;
+  }
+};
+
 // Helper para agrupar resultados individuales en visitas (Paciente + Fecha Toma)
 const groupResultadosIntoVisitas = (items) => {
   const map = {}
@@ -35,7 +69,6 @@ const groupResultadosIntoVisitas = (items) => {
         key: key,
         paciente: r.paciente,
         fecha_toma: r.fecha_toma,
-        medico: r.medico,
         estudios: [],
         resultadoIds: [],
         interpretacionMaxima: 'normal',
@@ -55,7 +88,53 @@ const groupResultadosIntoVisitas = (items) => {
       }
     }
   })
-  return Object.values(map)
+  const visitas = Object.values(map);
+  visitas.forEach(v => {
+    let crts = null;
+    let acr = null;
+    let albor = null;
+    let cre01 = null;
+
+    v.estudios.forEach(est => {
+      const code = est.prueba.codigo.toUpperCase();
+      const val = parseFloat(est.valor);
+      if (code === 'CRTS') crts = val;
+      if (code === 'ACR') acr = val;
+      if (code === 'ALBOR') albor = val;
+      if (code === 'CRE01') cre01 = val;
+    });
+
+    if (acr === null && albor !== null && cre01 !== null && cre01 > 0) {
+      acr = (albor / cre01) * 100;
+    }
+
+    let egfr = null;
+    if (crts !== null) {
+      const isFemale = resolveSex(v.paciente);
+      let age = 45;
+      if (v.paciente.fecha_nacimiento) {
+        const dob = new Date(v.paciente.fecha_nacimiento);
+        const ft = new Date(v.fecha_toma);
+        age = ft.getFullYear() - dob.getFullYear();
+        if (ft.getMonth() < dob.getMonth() || (ft.getMonth() === dob.getMonth() && ft.getDate() < dob.getDate())) {
+          age--;
+        }
+      }
+      egfr = calculateEgfr(crts, age, isFemale);
+    }
+
+    if (egfr !== null && acr !== null) {
+      if (egfr >= 60 && acr < 30) {
+        v.estatusGeneral = 'normal';
+      } else {
+        v.estatusGeneral = 'alterado';
+      }
+    } else {
+      v.estatusGeneral = 'normal'; // Por defecto si faltan datos
+    }
+  });
+
+  return visitas;
 }
 
 export default function ResultadosPage() {
@@ -68,7 +147,6 @@ export default function ResultadosPage() {
   
   // Catálogos para filtros y generación
   const [pruebas, setPruebas] = useState([])
-  const [medicos, setMedicos] = useState([])
   const [quimicos, setQuimicos] = useState([])
   
   // Quimico seleccionado para generación de reportes
@@ -77,7 +155,6 @@ export default function ResultadosPage() {
   // Filtros seleccionados
   const [filtroPaciente, setFiltroPaciente] = useState('')
   const [filtroPrueba, setFiltroPrueba] = useState('')
-  const [filtroMedico, setFiltroMedico] = useState('')
   const [filtroFechaDesde, setFiltroFechaDesde] = useState('')
   const [filtroFechaHasta, setFiltroFechaHasta] = useState('')
   const [filtroInterpretacion, setFiltroInterpretacion] = useState('todos')
@@ -92,7 +169,6 @@ export default function ResultadosPage() {
   
   // Inputs de envío
   const [destinatarioEmail, setDestinatarioEmail] = useState('')
-  const [copiaMedico, setCopiaMedico] = useState(false)
   const [destinatarioWhatsapp, setDestinatarioWhatsapp] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -107,13 +183,11 @@ export default function ResultadosPage() {
 
   const fetchCatalogos = async () => {
     try {
-      const [resPruebas, resMedicos, resQuimicos] = await Promise.all([
+      const [resPruebas, resQuimicos] = await Promise.all([
         getPruebas(),
-        getMedicos(),
         getQuimicosActivos()
       ])
       setPruebas(resPruebas.data)
-      setMedicos(resMedicos.data)
       setQuimicos(resQuimicos.data)
       if (resQuimicos.data.length > 0) {
         setQuimicoGeneracion(resQuimicos.data[0].id)
@@ -129,7 +203,6 @@ export default function ResultadosPage() {
       // Cargamos una cantidad mayor para poder agrupar visitas de forma representativa
       const filters = { page, limit: 150 }
       if (filtroPrueba) filters.prueba_id = filtroPrueba
-      if (filtroMedico) filters.medico_id = filtroMedico
       if (filtroFechaDesde) filters.fecha_desde = filtroFechaDesde
       if (filtroFechaHasta) filters.fecha_hasta = filtroFechaHasta
       if (filtroInterpretacion !== 'todos') filters.interpretacion = filtroInterpretacion
@@ -158,7 +231,7 @@ export default function ResultadosPage() {
 
   useEffect(() => {
     fetchResultados()
-  }, [page, filtroPrueba, filtroMedico, filtroFechaDesde, filtroFechaHasta, filtroInterpretacion])
+  }, [page, filtroPrueba, filtroFechaDesde, filtroFechaHasta, filtroInterpretacion])
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -262,8 +335,7 @@ export default function ResultadosPage() {
       notify.info('Enviando reporte por correo...')
       await enviarEmail({
         reporte_id: activeReporteId || reporteId,
-        destinatario_email: destinatarioEmail,
-        copia_medico: copiaMedico
+        destinatario_email: destinatarioEmail
       })
       notify.success('El envío por correo ha sido programado exitosamente.')
       setEmailModalOpen(false)
@@ -342,21 +414,6 @@ export default function ResultadosPage() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-              Médico
-            </label>
-            <select
-              value={filtroMedico}
-              onChange={(e) => setFiltroMedico(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-teal-500 transition"
-            >
-              <option value="">Todos</option>
-              {medicos.map(m => (
-                <option key={m.id} value={m.id}>{m.nombre} {m.apellido}</option>
-              ))}
-            </select>
-          </div>
 
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -440,7 +497,6 @@ export default function ResultadosPage() {
                 <th className="pb-3 font-semibold">Paciente</th>
                 <th className="pb-3 font-semibold">Fecha Visita</th>
                 <th className="pb-3 font-semibold">Estudios Realizados</th>
-                <th className="pb-3 font-semibold text-center">Médico Solicitante</th>
                 <th className="pb-3 font-semibold text-center">Estatus General</th>
                 <th className="pb-3 font-semibold text-right">Acciones</th>
               </tr>
@@ -488,12 +544,10 @@ export default function ResultadosPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="py-3.5 text-center text-xs">
-                    <div className="font-medium text-slate-700">Dr. {v.medico.nombre} {v.medico.apellido || ''}</div>
-                    <div className="text-slate-400 uppercase font-mono text-[10px]">Ced: {v.medico.cedula}</div>
-                  </td>
                   <td className="py-3.5 text-center">
-                    <Badge variant={v.interpretacionMaxima} />
+                    <Badge variant={v.estatusGeneral === 'normal' ? 'normal' : 'critico'}>
+                      {v.estatusGeneral}
+                    </Badge>
                   </td>
                   <td className="py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <button
@@ -540,14 +594,6 @@ export default function ResultadosPage() {
                 <div className="text-xs text-slate-500 mt-1">
                   Sexo: {previewVisita.paciente.sexo || 'N/A'} | F. Nac: {previewVisita.paciente.fecha_nacimiento ? new Date(previewVisita.paciente.fecha_nacimiento).toLocaleDateString('es-MX') : 'N/A'}
                 </div>
-              </div>
-              <div className="sm:text-right">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Médico Solicitante</div>
-                <div className="text-sm font-semibold text-slate-800">
-                  Dr. {previewVisita.medico.nombre} {previewVisita.medico.apellido || ''}
-                </div>
-                <div className="text-xs text-slate-500">Cédula: {previewVisita.medico.cedula}</div>
-                <div className="text-xs text-slate-500 italic mt-0.5">{previewVisita.medico.especialidad || 'General'}</div>
               </div>
             </div>
 
@@ -834,18 +880,6 @@ export default function ResultadosPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="copiaMedico"
-              checked={copiaMedico}
-              onChange={(e) => setCopiaMedico(e.target.checked)}
-              className="w-4 h-4 text-teal-600 border-slate-300 rounded focus:ring-teal-500"
-            />
-            <label htmlFor="copiaMedico" className="text-xs font-medium text-slate-600">
-              Enviar copia al médico solicitante
-            </label>
-          </div>
 
           <div className="flex justify-end gap-3 pt-4">
             <button

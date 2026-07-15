@@ -20,10 +20,6 @@ class PruebaInfo(BaseModel):
     valor_max: Optional[float] = None
     categoria: str
 
-class MedicoInfo(BaseModel):
-    nombre: str
-    apellido: Optional[str] = None
-    cedula: str
 
 
 class PacienteInfo(BaseModel):
@@ -53,7 +49,7 @@ class ResultadoResponse(BaseModel):
     id: int
     paciente: PacienteInfo
     prueba: PruebaInfo
-    medico: MedicoInfo
+
     valor: Optional[float] = None
     valor_texto: Optional[str] = None
     interpretacion: Optional[str] = None
@@ -71,7 +67,7 @@ async def get_resultados(
     response: Response,
     paciente_id: Optional[int] = None,
     prueba_id: Optional[int] = None,
-    medico_id: Optional[int] = None,
+
     fecha_desde: Optional[date] = None,
     fecha_hasta: Optional[date] = None,
     interpretacion: Optional[str] = None,
@@ -91,8 +87,7 @@ async def get_resultados(
         conditions.append(Resultado.paciente_id == paciente_id)
     if prueba_id:
         conditions.append(Resultado.prueba_id == prueba_id)
-    if medico_id:
-        conditions.append(Resultado.medico_id == medico_id)
+
     if fecha_desde:
         conditions.append(Resultado.fecha_toma >= fecha_desde)
     if fecha_hasta:
@@ -132,7 +127,7 @@ async def get_resultados(
         .options(
             selectinload(Resultado.paciente),
             selectinload(Resultado.prueba),
-            selectinload(Resultado.medico)
+
         )
         .order_by(desc(Resultado.fecha_toma), desc(Resultado.id))
         .offset(offset)
@@ -185,11 +180,7 @@ async def get_resultados(
                     valor_max=pr_max,
                     categoria=r.prueba.categoria
                 ),
-                medico=MedicoInfo(
-                    nombre=r.medico.nombre,
-                    apellido=r.medico.apellido,
-                    cedula=r.medico.cedula
-                ),
+
                 valor=valor_fl,
                 valor_texto=r.valor_texto,
                 interpretacion=r.interpretacion,
@@ -215,7 +206,7 @@ async def get_resultado(
         .options(
             selectinload(Resultado.paciente),
             selectinload(Resultado.prueba),
-            selectinload(Resultado.medico)
+
         )
     )
     result = await db.execute(stmt)
@@ -264,11 +255,7 @@ async def get_resultado(
             valor_max=pr_max,
             categoria=r.prueba.categoria
         ),
-        medico=MedicoInfo(
-            nombre=r.medico.nombre,
-            apellido=r.medico.apellido,
-            cedula=r.medico.cedula
-        ),
+
         valor=valor_fl,
         valor_texto=r.valor_texto,
         interpretacion=r.interpretacion,
@@ -319,7 +306,7 @@ async def get_paciente_resultados(
         .options(
             selectinload(Resultado.paciente),
             selectinload(Resultado.prueba),
-            selectinload(Resultado.medico)
+
         )
         .order_by(desc(Resultado.fecha_toma), desc(Resultado.id))
     )
@@ -366,11 +353,7 @@ async def get_paciente_resultados(
                     valor_max=pr_max,
                     categoria=r.prueba.categoria
                 ),
-                medico=MedicoInfo(
-                    nombre=r.medico.nombre,
-                    apellido=r.medico.apellido,
-                    cedula=r.medico.cedula
-                ),
+
                 valor=valor_fl,
                 valor_texto=r.valor_texto,
                 interpretacion=r.interpretacion,

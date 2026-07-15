@@ -109,8 +109,6 @@ export const createPrueba = (data) =>
 export const updatePrueba = (id, data) =>
   client.put(`/catalogo/pruebas/${id}`, data)
 
-// ── Médicos ───────────────────────────────────────────────────────
-export const getMedicos = () => client.get('/medicos')
 
 // ── Químicos ──────────────────────────────────────────────────────
 export const getQuimicos = () => client.get('/quimicos')
