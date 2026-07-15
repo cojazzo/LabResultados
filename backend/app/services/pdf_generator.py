@@ -358,7 +358,7 @@ def generate_reportlab_pdf(pdf_path, context):
             Paragraph(f"<b>{crts:.2f}</b>", cell_bold),
             Paragraph("mg/dL", cell_style),
             Paragraph(ref_crts, cell_style),
-            Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos (Química seca - Vitros)", cell_style)
+            Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos", cell_style)
         ])
         
     if egfr is not None:
@@ -409,7 +409,7 @@ def generate_reportlab_pdf(pdf_path, context):
         Paragraph(albor_str, cell_bold if albor is not None else cell_style),
         Paragraph("mg/L", cell_style),
         Paragraph("&lt; 20.0", cell_style),
-        Paragraph("Inmunoturbidimetría", cell_style)
+        Paragraph("Inmunoturbidimetría automatizada", cell_style)
     ])
     
     cre01_str = f"{cre01:.1f}" if cre01 is not None else "No solicitado"
@@ -418,7 +418,7 @@ def generate_reportlab_pdf(pdf_path, context):
         Paragraph(cre01_str, cell_bold if cre01 is not None else cell_style),
         Paragraph("mg/dL", cell_style),
         Paragraph("39.0 - 259.0", cell_style),
-        Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos (Química seca - Vitros)", cell_style)
+        Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos", cell_style)
     ])
     
     if acr is not None:
