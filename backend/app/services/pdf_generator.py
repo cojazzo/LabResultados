@@ -349,18 +349,18 @@ def generate_reportlab_pdf(pdf_path, context):
         egfr, formula_name = calculate_egfr(crts, age, is_female)
         
     # SECCIÓN 1: EVALUACIÓN DE FUNCIÓN GLOMERULAR (TFG)
-    elements.append(Paragraph("<b>1. EVALUACIÓN DE FUNCIÓN GLOMERULAR (TFG)</b>", section_title))
-    tfg_rows = [
-        [
-            Paragraph("<b>Prueba / Parámetro</b>", cell_bold),
-            Paragraph("<b>Resultado</b>", cell_bold),
-            Paragraph("<b>Unidades</b>", cell_bold),
-            Paragraph("<b>Límites de Referencia</b>", cell_bold),
-            Paragraph("<b>Método/Fórmula</b>", cell_bold)
-        ]
-    ]
-    
     if crts is not None:
+        elements.append(Paragraph("<b>EVALUACIÓN DE FUNCIÓN GLOMERULAR (TFG)</b>", section_title))
+        tfg_rows = [
+            [
+                Paragraph("<b>Prueba / Parámetro</b>", cell_bold),
+                Paragraph("<b>Resultado</b>", cell_bold),
+                Paragraph("<b>Unidades</b>", cell_bold),
+                Paragraph("<b>Límites de Referencia</b>", cell_bold),
+                Paragraph("<b>Método/Fórmula</b>", cell_bold)
+            ]
+        ]
+        
         ref_crts = "0.6 - 1.2" if not is_female else "0.5 - 1.1"
         tfg_rows.append([
             Paragraph("Creatinina Sérica (CRTS)", cell_style),
@@ -369,39 +369,40 @@ def generate_reportlab_pdf(pdf_path, context):
             Paragraph(ref_crts, cell_style),
             Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos", cell_style)
         ])
-        
-    if egfr is not None:
-        egfr_val_str = f"{egfr:.1f}"
-        int_color = "#16a34a" if egfr >= 60 else "#dc2626"
-        tfg_rows.append([
-            Paragraph("Tasa de Filtración Glomerular Estimada (eGFR)", cell_bold),
-            Paragraph(f"<font color='{int_color}'><b>{egfr_val_str}</b></font>", cell_bold),
-            Paragraph("mL/min/1.73m²", cell_style),
-            Paragraph("&gt;= 90.0", cell_style),
-            Paragraph(formula_name, cell_bold)
-        ])
-    else:
-        tfg_rows.append([
-            Paragraph("Tasa de Filtración Glomerular Estimada (eGFR)", cell_bold),
-            Paragraph("<font color='gray'>Falta CRTS</font>", cell_style),
-            Paragraph("mL/min/1.73m²", cell_style),
-            Paragraph("&gt;= 90.0", cell_style),
-            Paragraph("N/A", cell_style)
-        ])
-        
-    tfg_table = Table(tfg_rows, colWidths=[190, 80, 84, 100, 110])
-    tfg_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-        ('TOPPADDING', (0,0), (-1,-1), 2),
-    ]))
-    elements.append(tfg_table)
-    elements.append(Spacer(1, 2))
+            
+        if egfr is not None:
+            egfr_val_str = f"{egfr:.1f}"
+            int_color = "#16a34a" if egfr >= 60 else "#dc2626"
+            tfg_rows.append([
+                Paragraph("Estimación de Tasa de Filtrado Glomerular (eTFG)", cell_bold),
+                Paragraph(f"<font color='{int_color}'><b>{egfr_val_str}</b></font>", cell_bold),
+                Paragraph("mL/min/1.73m²", cell_style),
+                Paragraph("&gt;= 90.0", cell_style),
+                Paragraph(formula_name, cell_bold)
+            ])
+        else:
+            tfg_rows.append([
+                Paragraph("Estimación de Tasa de Filtrado Glomerular (eTFG)", cell_bold),
+                Paragraph("<font color='gray'>Falta CRTS</font>", cell_style),
+                Paragraph("mL/min/1.73m²", cell_style),
+                Paragraph("&gt;= 90.0", cell_style),
+                Paragraph("N/A", cell_style)
+            ])
+            
+        tfg_table = Table(tfg_rows, colWidths=[190, 80, 84, 100, 110])
+        tfg_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+        ]))
+        elements.append(tfg_table)
+        elements.append(Spacer(1, 2))
+
     
     # SECCIÓN 2: PERFIL DE ALBUMINURIA (ACR)
-    elements.append(Paragraph("<b>2. PERFIL DE ALBUMINURIA</b>", section_title))
+    elements.append(Paragraph("<b>PERFIL DE ALBUMINURIA</b>", section_title))
     acr_rows = [
         [
             Paragraph("<b>Prueba / Parámetro</b>", cell_bold),
