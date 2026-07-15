@@ -475,7 +475,7 @@ def generate_reportlab_pdf(pdf_path, context):
     g_cat = kdigo["g_cat"]
     a_cat = kdigo["a_cat"]
     
-    elements.append(Paragraph("<b>3. MATRIZ DE RIESGO RENAL KDIGO (ESTADIFICACIÓN)</b>", section_title))
+    elements.append(Paragraph("<b>MATRIZ DE RIESGO RENAL KDIGO (ESTADIFICACIÓN)</b>", section_title))
     
     if egfr is None:
         kdigo_matrix = [
@@ -565,7 +565,7 @@ def generate_reportlab_pdf(pdf_path, context):
     elements.append(Spacer(1, 2))
     
     # SECCIÓN 4: RECOMENDACIÓN CLÍNICA
-    elements.append(Paragraph("<b>4. EVALUACIÓN Y RECOMENDACIÓN CLÍNICA</b>", section_title))
+    elements.append(Paragraph("<b>EVALUACIÓN Y RECOMENDACIÓN CLÍNICA</b>", section_title))
     
     rec_bg = "#f8fafc"
     rec_border = "#cbd5e1"
