@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reporte de Resultados de Laboratorio</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm 1.5cm 2cm 1.5cm;
+            @bottom-right {
+                content: "Página " counter(page) " de " counter(pages);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 8pt;
+                color: #6c757d;
+            }
+            @bottom-left {
+                content: "Folio: {{ folio }}";
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 8pt;
+                color: #6c757d;
+            }
+        }
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #212529;
+            margin: 0;
+            padding: 0;
+        }
+        /* Header */
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            border-bottom: 3px solid #1e3a5f;
+            padding-bottom: 10px;
+        }
+        .logo-cell {
+            width: 70px;
+            vertical-align: middle;
+        }
+        .logo-svg {
+            fill: #1e3a5f;
+            width: 50px;
+            height: 50px;
+        }
+        .lab-details-cell {
+            vertical-align: middle;
+            text-align: left;
+            padding-left: 10px;
+        }
+        .lab-name {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1e3a5f;
+            margin: 0;
+            line-height: 1.1;
+        }
+        .lab-meta {
+            font-size: 8pt;
+            color: #495057;
+            margin: 3px 0 0 0;
+        }
+        .report-title-cell {
+            vertical-align: middle;
+            text-align: right;
+        }
+        .report-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #0d9488;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .report-folio {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #495057;
+            margin: 3px 0 0 0;
+        }
+
+        /* Metadata sections */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+        .info-table td {
+            padding: 8px 12px;
+            vertical-align: top;
+            font-size: 9pt;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #1e3a5f;
+            width: 18%;
+        }
+        .info-value {
+            color: #334155;
+            width: 32%;
+        }
+        .section-title {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #1e3a5f;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 4px;
+            margin-top: 0;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Results table */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        .results-table th {
+            background-color: #1e3a5f;
+            color: #ffffff;
+            font-weight: bold;
+            text-align: left;
+            padding: 8px 10px;
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .results-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 9pt;
+            vertical-align: middle;
+        }
+        .results-table tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+        .test-name {
+            font-weight: bold;
+            color: #334155;
+        }
+        .test-method {
+            font-size: 8pt;
+            color: #64748b;
+            font-weight: normal;
+            display: block;
+        }
+        .result-value {
+            font-family: "Courier New", Courier, monospace;
+            font-weight: bold;
+            font-size: 10pt;
+        }
+        .result-unit {
+            color: #64748b;
+        }
+        
+        /* Badges for status */
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 7.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            text-align: center;
+        }
+        .badge-normal {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+        .badge-bajo {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+        .badge-alto {
+            background-color: #ffeeb2;
+            color: #b45309;
+        }
+        .badge-critico-bajo {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #f87171;
+        }
+        .badge-critico-alto {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #f87171;
+        }
+
+        /* Row highlights */
+        tr.row-anormal {
+            background-color: #fffbeb !important;
+        }
+        tr.row-critico {
+            background-color: #fef2f2 !important;
+        }
+
+        /* Observaciones */
+        .observations-section {
+            background-color: #f8fafc;
+            border-left: 4px solid #0d9488;
+            padding: 12px;
+            margin-bottom: 35px;
+            font-size: 9pt;
+            border-radius: 0 6px 6px 0;
+        }
+        .observations-title {
+            font-weight: bold;
+            color: #0d9488;
+            margin-top: 0;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-size: 8pt;
+            letter-spacing: 0.5px;
+        }
+
+        /* Signature */
+        .signature-container {
+            margin-top: 50px;
+            width: 100%;
+            page-break-inside: avoid;
+        }
+        .signature-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .signature-line-cell {
+            width: 40%;
+            text-align: center;
+            vertical-align: top;
+        }
+        .signature-line {
+            border-top: 1px solid #94a3b8;
+            margin-top: 40px;
+            padding-top: 6px;
+            font-size: 9pt;
+            color: #334155;
+        }
+        .signature-title {
+            font-size: 7.5pt;
+            color: #64748b;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+        .spacer-cell {
+            width: 20%;
+        }
+
+        /* Legal / confidentiality notice */
+        .legal-notice {
+            margin-top: 40px;
+            font-size: 7pt;
+            color: #94a3b8;
+            text-align: justify;
+            line-height: 1.3;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 8px;
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <table class="header-table">
+        <tr>
+            <td class="logo-cell">
+                <svg class="logo-svg" viewBox="0 0 24 24">
+                    <path d="M19 10.5V20c0 1.1-.9 2-2 2H7c-1.1 0-2-.9-2-2v-9.5L12 4l7 6.5zM10.5 17h3v-3h-3v3zm0-4.5h3v-3h-3v3zM12 2L2 11h3v9c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-9h3L12 2z"/>
+                </svg>
+            </td>
+            <td class="lab-details-cell">
+                <h1 class="lab-name">{{ lab_name }}</h1>
+                <p class="lab-meta">{{ lab_address }} | Tel: {{ lab_phone }}</p>
+                <p class="lab-meta">Email: {{ lab_email }}</p>
+            </td>
+            <td class="report-title-cell">
+                <h2 class="report-title">Reporte de Resultados</h2>
+                <p class="report-folio">Folio: {{ folio }}</p>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Info Paciente y Médico -->
+    <table class="info-table">
+        <tr>
+            <td class="info-label">Paciente:</td>
+            <td class="info-value"><strong>{{ paciente.apellido }}, {{ paciente.nombre }}</strong></td>
+            <td class="info-label">Médico Solicitante:</td>
+            <td class="info-value">{{ medico.nombre }} {{ medico.apellido }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Identificación:</td>
+            <td class="info-value">{{ paciente.identificacion }}</td>
+            <td class="info-label">Cédula Profesional:</td>
+            <td class="info-value">{{ medico.cedula }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Fecha Nacimiento:</td>
+            <td class="info-value">
+                {% if paciente.fecha_nacimiento %}
+                    {{ paciente.fecha_nacimiento.strftime('%d/%m/%Y') }}
+                {% else %}
+                    No provista
+                {% endif %}
+            </td>
+            <td class="info-label">Especialidad:</td>
+            <td class="info-value">{{ medico.especialidad or 'Médico General' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Sexo / Teléfono:</td>
+            <td class="info-value">{{ paciente.sexo or 'N/E' }} / {{ paciente.telefono or 'N/E' }}</td>
+            <td class="info-label">Fecha de Toma:</td>
+            <td class="info-value">{{ fecha_toma }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Email Paciente:</td>
+            <td class="info-value">{{ paciente.email or 'No provisto' }}</td>
+            <td class="info-label">Fecha de Emisión:</td>
+            <td class="info-value">{{ fecha_emision }}</td>
+        </tr>
+    </table>
+
+    <!-- Tabla de Resultados -->
+    <h3 class="section-title">Estudios Realizados</h3>
+    <table class="results-table">
+        <thead>
+            <tr>
+                <th style="width: 35%;">Estudio / Parámetro</th>
+                <th style="width: 20%; text-align: right;">Resultado</th>
+                <th style="width: 12%;">Unidades</th>
+                <th style="width: 18%;">Valores de Referencia</th>
+                <th style="width: 15%; text-align: center;">Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for res in resultados %}
+                {% set pr = res.prueba %}
+                {% set class_name = '' %}
+                {% if res.interpretacion == 'critico_alto' or res.interpretacion == 'critico_bajo' %}
+                    {% set class_name = 'row-critico' %}
+                {% elif res.interpretacion == 'alto' or res.interpretacion == 'bajo' %}
+                    {% set class_name = 'row-anormal' %}
+                {% endif %}
+                <tr class="{{ class_name }}">
+                    <td>
+                        <span class="test-name">{{ pr.nombre }}</span>
+                        {% if pr.metodo %}
+                            <span class="test-method">Método: {{ pr.metodo }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; font-weight: bold;">
+                        <span class="result-value">
+                            {% if res.valor is not none %}
+                                {{ res.valor }}
+                            {% else %}
+                                {{ res.valor_texto }}
+                            {% endif %}
+                        </span>
+                    </td>
+                    <td><span class="result-unit">{{ pr.unidad }}</span></td>
+                    <td>
+                        {% if pr.valor_min is not none and pr.valor_max is not none %}
+                            {{ pr.valor_min }} - {{ pr.valor_max }}
+                        {% elif pr.valor_max is not none %}
+                            Menor a {{ pr.valor_max }}
+                        {% elif pr.valor_min is not none %}
+                            Mayor a {{ pr.valor_min }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">
+                        {% if res.interpretacion == 'normal' %}
+                            <span class="badge badge-normal">Normal</span>
+                        {% elif res.interpretacion == 'bajo' %}
+                            <span class="badge badge-bajo">Bajo</span>
+                        {% elif res.interpretacion == 'alto' %}
+                            <span class="badge badge-alto">Alto</span>
+                        {% elif res.interpretacion == 'critico_bajo' %}
+                            <span class="badge badge-critico-bajo">Crítico B.</span>
+                        {% elif res.interpretacion == 'critico_alto' %}
+                            <span class="badge badge-critico-alto">Crítico A.</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Observaciones si algún resultado tiene observaciones -->
+    {% set has_obs = false %}
+    {% set obs_text = '' %}
+    {% for res in resultados %}
+        {% if res.observaciones %}
+            {% set has_obs = true %}
+        {% endif %}
+    {% endfor %}
+    
+    {% if has_obs %}
+        <div class="observations-section">
+            <h4 class="observations-title">Observaciones Clínicas</h4>
+            <ul>
+                {% for res in resultados %}
+                    {% if res.observaciones %}
+                        <li><strong>{{ res.prueba.nombre }}:</strong> {{ res.observaciones }}</li>
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <!-- Firma de validación -->
+    <div class="signature-container">
+        <table class="signature-table">
+            <tr>
+                <td class="spacer-cell"></td>
+                <td class="signature-line-cell">
+                    <div class="signature-line">
+                        <strong>{{ usuario_nombre }}</strong>
+                        <div class="signature-title">Responsable de Validación</div>
+                    </div>
+                </td>
+                <td class="spacer-cell"></td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Aviso Legal -->
+    <div class="legal-notice">
+        <strong>Aviso de Confidencialidad y Descargo de Responsabilidad:</strong> Este documento contiene información médica altamente confidencial sujeta a secreto profesional. Su divulgación no autorizada está sancionada por la ley. Los resultados de este reporte expresan los hallazgos analíticos obtenidos bajo estrictos controles de calidad e interpretación estándar de laboratorio. Se recuerda al médico responsable de la salud del paciente que estos resultados constituyen un elemento auxiliar de diagnóstico y deben correlacionarse con el cuadro clínico general del paciente antes de determinar tratamientos o conductas terapéuticas.
+    </div>
+
+</body>
+</html>

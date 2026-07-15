@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lab_user
+      POSTGRES_PASSWORD: lab_password_2026
+      POSTGRES_DB: lab_resultados
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab_user -d lab_resultados"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://lab_user:lab_password_2026@db:5432/lab_resultados
+      - SECRET_KEY=production-secret-key-change-this
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=480
+      - LAB_NAME=Laboratorio Clínico
+      - LAB_ADDRESS=Av. Gómez Morín S/N Col. la Estación C.P. 20180, Aguascalientes, Ags. Fideicomiso complejo Tres Centurias (a un costado del CHMH)
+      - LAB_PHONE=449 459 57 97
+      - LAB_EMAIL=inaer.resultados@aguascalientes.gob.mx
+      - MOCK_EMAIL=true
+      - MOCK_WHATSAPP=true
+      - PDF_STORAGE_PATH=/app/storage/pdfs
+      - BASE_URL=http://localhost:8000
+    volumes:
+      - pdf_storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    depends_on:
+      - backend
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      # - N8N_ENCRYPTION_KEY=n8n-encryption-key-change-this-in-prod
+      - WEBHOOK_URL=${N8N_PUBLIC_URL:-http://localhost:5678}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - n8n
+
+volumes:
+  postgres_data:
+  pdf_storage:
+  n8n_data:
+    external: true
+    name: n8n_data_local

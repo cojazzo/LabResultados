@@ -1,0 +1,155 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "path": "cuestionario-clinico",
+        "formTitle": "Cuestionario Clínico de Función Renal",
+        "formDescription": "Por favor, complete este cuestionario clínico antes de realizar sus pruebas de función renal.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "CURP (Clave Única de Registro de Población)",
+              "fieldName": "curp",
+              "required": true
+            },
+            {
+              "fieldLabel": "Nombre(s)",
+              "fieldName": "nombre",
+              "required": true
+            },
+            {
+              "fieldLabel": "Apellido Paterno",
+              "fieldName": "apellido_paterno",
+              "required": true
+            },
+            {
+              "fieldLabel": "Apellido Materno",
+              "fieldName": "apellido_materno"
+            },
+            {
+              "fieldLabel": "Sexo",
+              "fieldName": "sexo",
+              "fieldType": "select",
+              "fieldOptions": "Masculino, Femenino"
+            },
+            {
+              "fieldLabel": "Teléfono de contacto",
+              "fieldName": "telefono"
+            },
+            {
+              "fieldLabel": "Correo Electrónico",
+              "fieldName": "email"
+            },
+            {
+              "fieldLabel": "Fecha de nacimiento",
+              "fieldName": "fecha_nacimiento",
+              "fieldType": "date"
+            },
+            {
+              "fieldLabel": "Edad",
+              "fieldName": "edad",
+              "fieldType": "number"
+            },
+            {
+              "fieldLabel": "Estado de Origen",
+              "fieldName": "estado_origen"
+            },
+            {
+              "fieldLabel": "Domicilio (calle, número, colonia)",
+              "fieldName": "domicilio"
+            },
+            {
+              "fieldLabel": "Código Postal",
+              "fieldName": "codigo_postal"
+            },
+            {
+              "fieldLabel": "Estado de residencia",
+              "fieldName": "estado_residencia"
+            },
+            {
+              "fieldLabel": "Municipio de residencia",
+              "fieldName": "municipio_residencia"
+            },
+            {
+              "fieldLabel": "Peso (kg)",
+              "fieldName": "peso",
+              "fieldType": "number"
+            },
+            {
+              "fieldLabel": "Estatura (metros, ej: 1.75)",
+              "fieldName": "estatura",
+              "fieldType": "number"
+            },
+            {
+              "fieldLabel": "Derechohabiencia",
+              "fieldName": "derechohabiencia",
+              "fieldType": "select",
+              "fieldOptions": "IMSS, INSABI, ISSSTE, Ninguno"
+            },
+            {
+              "fieldLabel": "¿Toma algún suplemento (ej. creatina, proteína, etc.)?",
+              "fieldName": "toma_suplemento"
+            },
+            {
+              "fieldLabel": "¿Qué tipo de agua toma?",
+              "fieldName": "tipo_agua",
+              "fieldType": "select",
+              "fieldOptions": "agua de la llave, agua rellenada, agua de marca reconocida (ciel, bonafont, epura, etc.)."
+            },
+            {
+              "fieldLabel": "¿Cocina con agua de la llave?",
+              "fieldName": "cocina_agua_llave",
+              "fieldType": "select",
+              "fieldOptions": "Sí, No"
+            },
+            {
+              "fieldLabel": "Padecimientos clínicos",
+              "fieldName": "padecimientos",
+              "fieldType": "multiSelect",
+              "fieldOptions": "Hipertensión(presión alta), Diabetes, Obesidad, Algún familiar cuenta con enfermedad renal, Enfermedad del corazón, Ningún padecimiento, Quiste Renal, Infecciones urinarias de repetición"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e963b519-e932-47a3-aa9a-8a19de0cc4a9",
+      "name": "n8n Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/pacientes/cuestionario",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"curp\": $json.curp,\n  \"nombre\": $json.nombre,\n  \"apellido_paterno\": $json.apellido_paterno,\n  \"apellido_materno\": $json.apellido_materno || null,\n  \"sexo\": $json.sexo || null,\n  \"telefono\": $json.telefono || null,\n  \"email\": $json.email || null,\n  \"fecha_nacimiento\": $json.fecha_nacimiento ? $json.fecha_nacimiento.split('T')[0] : null,\n  \"edad\": ($json.edad && !isNaN($json.edad)) ? parseInt($json.edad) : null,\n  \"estado_origen\": $json.estado_origen || null,\n  \"domicilio\": $json.domicilio || null,\n  \"codigo_postal\": $json.codigo_postal || null,\n  \"estado_residencia\": $json.estado_residencia || null,\n  \"municipio_residencia\": $json.municipio_residencia || null,\n  \"peso\": ($json.peso && !isNaN($json.peso)) ? parseFloat($json.peso) : null,\n  \"estatura\": ($json.estatura && !isNaN($json.estatura)) ? parseFloat($json.estatura) : null,\n  \"derechohabiencia\": $json.derechohabiencia || null,\n  \"toma_suplemento\": $json.toma_suplemento || null,\n  \"tipo_agua\": $json.tipo_agua || null,\n  \"cocina_agua_llave\": $json.cocina_agua_llave || null,\n  \"padecimientos\": Array.isArray($json.padecimientos) ? $json.padecimientos : ($json.padecimientos ? [$json.padecimientos] : [])\n} }}"
+      },
+      "id": "e2ba349e-f2d4-4e94-9125-ee91dbf0402b",
+      "name": "Registrar Cuestionario API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        350,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "n8n Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Registrar Cuestionario API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

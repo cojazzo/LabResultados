@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/* ─── LabResultados Brand Tokens ────────────────────────────────── */
+@theme {
+  --color-primary-50:  #e8eef5;
+  --color-primary-100: #c5d3e6;
+  --color-primary-200: #9eb5d4;
+  --color-primary-300: #7797c2;
+  --color-primary-400: #5a81b5;
+  --color-primary-500: #3d6ba7;
+  --color-primary-600: #1e3a5f;
+  --color-primary-700: #182f4d;
+  --color-primary-800: #12243b;
+  --color-primary-900: #0c1929;
+
+  --color-secondary-50:  #e6f7f5;
+  --color-secondary-100: #b3eae4;
+  --color-secondary-200: #80ddd3;
+  --color-secondary-300: #4dd0c2;
+  --color-secondary-400: #26c6b5;
+  --color-secondary-500: #0d9488;
+  --color-secondary-600: #0b7d73;
+  --color-secondary-700: #08665e;
+  --color-secondary-800: #064f49;
+  --color-secondary-900: #033834;
+
+  --color-accent-50:  #fff8e1;
+  --color-accent-100: #ffecb3;
+  --color-accent-200: #ffe082;
+  --color-accent-300: #ffd54f;
+  --color-accent-400: #ffca28;
+  --color-accent-500: #f59e0b;
+  --color-accent-600: #d97706;
+  --color-accent-700: #b45309;
+  --color-accent-800: #92400e;
+  --color-accent-900: #78350f;
+
+  --color-success:  #10b981;
+  --color-warning:  #f97316;
+  --color-danger:   #ef4444;
+  --color-info:     #3b82f6;
+
+  --color-bg:       #f8fafc;
+  --color-card:     #ffffff;
+  --color-sidebar:  #1e3a5f;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ─── Base Resets ───────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: #1e293b;
+  line-height: 1.6;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ─── Animations ────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .7; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: scale(.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100%); }
+}
+
+.animate-fade-in     { animation: fadeIn .4s ease-out both; }
+.animate-fade-in-up  { animation: fadeInUp .5s ease-out both; }
+.animate-slide-right { animation: slideInRight .4s ease-out both; }
+.animate-count-up    { animation: countUp .5s ease-out both; }
+.animate-slide-down  { animation: slideDown .3s ease-out both; }
+.animate-toast-in    { animation: toastIn .35s ease-out both; }
+.animate-toast-out   { animation: toastOut .3s ease-in both; }
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ─── Glassmorphism ─────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* ─── Gradient borders ──────────────────────────────────────────── */
+.gradient-border {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(135deg, var(--color-primary-500), var(--color-secondary-500));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
