@@ -672,13 +672,21 @@ async def generate_report_pdf(db: AsyncSession, paciente_id: int, resultado_ids:
                 folio_extraido = folio_raw.replace("/", "-").replace("\\", "-")
                 break
 
-    # 4. Buscar si ya existe un reporte no autorizado
-    stmt_exist = select(ReporteGenerado).where(
-        ReporteGenerado.paciente_id == paciente.id,
-        ReporteGenerado.lote_id == lote_id,
-        ReporteGenerado.authorized_at.is_(None)
-    )
-    reporte = (await db.execute(stmt_exist)).scalar_one_or_none()
+    # 4. Buscar si ya existe un reporte
+    reporte = None
+    if folio_extraido:
+        stmt_exist = select(ReporteGenerado).where(ReporteGenerado.folio == folio_extraido)
+        reporte = (await db.execute(stmt_exist)).scalar_one_or_none()
+        
+    if not reporte:
+        stmt_exist = select(ReporteGenerado).where(
+            ReporteGenerado.paciente_id == paciente.id,
+            ReporteGenerado.authorized_at.is_(None)
+        )
+        if lote_id:
+            stmt_exist = stmt_exist.where(ReporteGenerado.lote_id == lote_id)
+        stmt_exist = stmt_exist.order_by(ReporteGenerado.id.desc()).limit(1)
+        reporte = (await db.execute(stmt_exist)).scalar_one_or_none()
 
     if reporte:
         folio = folio_extraido if folio_extraido else reporte.folio
