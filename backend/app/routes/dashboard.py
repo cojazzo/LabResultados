@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from app.database import get_db
 from app.models import Resultado, Paciente, ReporteGenerado, Envio, Prueba, User
 from app.core.security import get_current_user
@@ -179,3 +179,138 @@ async def get_dashboard_top_pruebas(
         ]
 
     return [TopPrueba(codigo=row[0], nombre=row[1], cantidad=row[2]) for row in rows]
+
+
+# ── Mapa de Pacientes ─────────────────────────────────────────────────────────
+
+class MapaPuntoResponse(BaseModel):
+    lat: float
+    lon: float
+    colonia: Optional[str] = None
+    total: int
+
+class GeocodeResultResponse(BaseModel):
+    geocodificados: int
+    fallidos: int
+    sin_geocodificar_restantes: int
+
+
+@router.get("/mapa-pacientes", response_model=List[MapaPuntoResponse])
+async def get_mapa_pacientes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retorna los puntos geocodificados de pacientes en Aguascalientes
+    para graficar en el mapa del dashboard.
+
+    Solo incluye pacientes con lat/lon ya calculados.
+    Los puntos se agrupan por coordenada redondeada (colonia aprox.)
+    para preservar privacidad y reducir carga en el frontend.
+    """
+    # Filtrar pacientes de Aguascalientes con coordenadas
+    stmt = select(Paciente).where(
+        and_(
+            Paciente.lat.isnot(None),
+            Paciente.lon.isnot(None),
+            or_(
+                Paciente.estado_residencia.ilike("%aguascalientes%"),
+                Paciente.municipio_residencia.ilike("%aguascalientes%"),
+            )
+        )
+    )
+    result = await db.execute(stmt)
+    pacientes = result.scalars().all()
+
+    if not pacientes:
+        return []
+
+    # Agrupar por coordenada redondeada a 3 decimales (~110m de precisión)
+    # para no exponer ubicaciones exactas por nombre
+    clusters: dict = {}
+    for p in pacientes:
+        # Extraer colonia del domicilio (primera parte antes de la coma, si la hay)
+        colonia = None
+        if p.domicilio:
+            partes = p.domicilio.split(",")
+            colonia = partes[0].strip()[:60] if partes else None
+
+        key = (round(float(p.lat), 3), round(float(p.lon), 3))
+        if key not in clusters:
+            clusters[key] = {"lat": key[0], "lon": key[1], "colonia": colonia, "total": 0}
+        clusters[key]["total"] += 1
+
+    return [
+        MapaPuntoResponse(
+            lat=v["lat"],
+            lon=v["lon"],
+            colonia=v["colonia"],
+            total=v["total"],
+        )
+        for v in clusters.values()
+    ]
+
+
+@router.post("/geocodificar", response_model=GeocodeResultResponse)
+async def geocodificar_pacientes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Geocodifica en batch todos los pacientes de Aguascalientes que aún
+    no tienen coordenadas.
+
+    Llama a la API pública de Nominatim (OpenStreetMap) con respeto al
+    rate limit de 1 solicitud por segundo.
+
+    Solo usuarios autenticados pueden disparar este proceso.
+    """
+    from app.services.geocoding import geocode_batch
+
+    # Obtener pacientes de Aguascalientes sin geocodificar
+    stmt = select(Paciente).where(
+        and_(
+            Paciente.lat.is_(None),
+            or_(
+                Paciente.estado_residencia.ilike("%aguascalientes%"),
+                Paciente.municipio_residencia.ilike("%aguascalientes%"),
+            )
+        )
+    )
+    result = await db.execute(stmt)
+    pacientes = result.scalars().all()
+
+    if not pacientes:
+        # Contar cuántos ya tienen geocodificación
+        stmt_total = select(func.count(Paciente.id)).where(
+            and_(
+                Paciente.lat.isnot(None),
+                or_(
+                    Paciente.estado_residencia.ilike("%aguascalientes%"),
+                    Paciente.municipio_residencia.ilike("%aguascalientes%"),
+                )
+            )
+        )
+        total_ok = (await db.execute(stmt_total)).scalar() or 0
+        return GeocodeResultResponse(geocodificados=0, fallidos=0, sin_geocodificar_restantes=0)
+
+    geocodificados, fallidos = await geocode_batch(pacientes, db)
+    await db.commit()
+
+    # Contar cuántos quedaron sin geocodificar en Aguascalientes
+    stmt_restantes = select(func.count(Paciente.id)).where(
+        and_(
+            Paciente.lat.is_(None),
+            or_(
+                Paciente.estado_residencia.ilike("%aguascalientes%"),
+                Paciente.municipio_residencia.ilike("%aguascalientes%"),
+            )
+        )
+    )
+    restantes = (await db.execute(stmt_restantes)).scalar() or 0
+
+    return GeocodeResultResponse(
+        geocodificados=geocodificados,
+        fallidos=fallidos,
+        sin_geocodificar_restantes=restantes,
+    )

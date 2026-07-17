@@ -1,7 +1,7 @@
 """
 Datos semilla para LabResultados.
 
-Crea el usuario admin, médicos de ejemplo, catálogo de pruebas,
+Crea el usuario admin, químicos de ejemplo, catálogo de pruebas,
 pacientes de muestra y lotes de resultados de prueba.
 
 Ejecutar con: python -m backend.seed.seed_data
@@ -24,9 +24,19 @@ from sqlalchemy import select, text
 
 async def get_engine():
     """Crear engine según el entorno (Docker o local)."""
+    # Intentar cargar .env
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.exists():
+        from pydantic_settings import BaseSettings
+        # Cargar de forma simple
+        for line in open(env_path, encoding="utf-8"):
+            if line.strip() and not line.startswith("#") and "=" in line:
+                key, val = line.strip().split("=", 1)
+                os.environ.setdefault(key.strip(), val.strip())
+                
     database_url = os.getenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://lab_user:lab_password_2026@localhost:5432/lab_resultados",
+        "sqlite+aiosqlite:///./lab_resultados.db",
     )
     return create_async_engine(database_url, echo=False)
 
@@ -78,38 +88,28 @@ PRUEBAS_CATALOGO = [
 ]
 
 # ---------------------------------------------------------------------------
-# Médicos de ejemplo
+# Químicos de ejemplo
 # ---------------------------------------------------------------------------
-MEDICOS = [
+QUIMICOS = [
     {
         "cedula": "12345678",
-        "nombre": "Dr. Carlos Alberto López Hernández",
-        "especialidad": "Medicina General",
+        "nombre_completo": "Q.B. Carlos Alberto López Hernández",
+        "activo": True,
     },
     {
         "cedula": "23456789",
-        "nombre": "Dra. María Fernanda Gutiérrez Sánchez",
-        "especialidad": "Medicina Interna",
+        "nombre_completo": "Q.F.B. María Fernanda Gutiérrez Sánchez",
+        "activo": True,
     },
     {
         "cedula": "34567890",
-        "nombre": "Dr. José Manuel Ramírez Torres",
-        "especialidad": "Endocrinología",
-    },
-    {
-        "cedula": "45678901",
-        "nombre": "Dra. Ana Lucía Martínez Flores",
-        "especialidad": "Cardiología",
-    },
-    {
-        "cedula": "56789012",
-        "nombre": "Dr. Roberto Alejandro Díaz Castillo",
-        "especialidad": "Nefrología",
+        "nombre_completo": "Dr. José Manuel Ramírez Torres",
+        "activo": True,
     },
 ]
 
 # ---------------------------------------------------------------------------
-# Pacientes de ejemplo
+# Pacientes de ejemplo (Aguascalientes)
 # ---------------------------------------------------------------------------
 PACIENTES = [
     {
@@ -118,9 +118,17 @@ PACIENTES = [
         "apellido": "García Ramírez",
         "fecha_nacimiento": date(1985, 3, 15),
         "sexo": "F",
-        "telefono": "+52 55 1234 5678",
+        "telefono": "4491234567",
         "email": "maria.garcia@email.com",
-        "whatsapp": "+52 55 1234 5678",
+        "whatsapp": "4491234567",
+        "domicilio": "Av. Gómez Morín 123 Col. Centro",
+        "codigo_postal": "20000",
+        "estado_residencia": "Aguascalientes",
+        "municipio_residencia": "Aguascalientes",
+        "peso": 65.2,
+        "estatura": 1.62,
+        "derechohabiencia": "IMSS",
+        "padecimientos": "Ningún padecimiento",
     },
     {
         "identificacion": "LOPC900728HDFPRS05",
@@ -128,9 +136,17 @@ PACIENTES = [
         "apellido": "López Cruz",
         "fecha_nacimiento": date(1990, 7, 28),
         "sexo": "M",
-        "telefono": "+52 55 2345 6789",
+        "telefono": "4492345678",
         "email": "pedro.lopez@email.com",
-        "whatsapp": "+52 55 2345 6789",
+        "whatsapp": "4492345678",
+        "domicilio": "Calle Madero 456 Col. la Estación",
+        "codigo_postal": "20180",
+        "estado_residencia": "Aguascalientes",
+        "municipio_residencia": "Aguascalientes",
+        "peso": 80.5,
+        "estatura": 1.76,
+        "derechohabiencia": "ISSSTE",
+        "padecimientos": "Hipertensión(presión alta)",
     },
     {
         "identificacion": "HEMR780512MDFRNR02",
@@ -138,9 +154,17 @@ PACIENTES = [
         "apellido": "Hernández Moreno",
         "fecha_nacimiento": date(1978, 5, 12),
         "sexo": "F",
-        "telefono": "+52 55 3456 7890",
+        "telefono": "4493456789",
         "email": "rosa.hernandez@email.com",
-        "whatsapp": "+52 55 3456 7890",
+        "whatsapp": "4493456789",
+        "domicilio": "Av. de la Convención 789 Col. Gremial",
+        "codigo_postal": "20030",
+        "estado_residencia": "Aguascalientes",
+        "municipio_residencia": "Aguascalientes",
+        "peso": 70.0,
+        "estatura": 1.58,
+        "derechohabiencia": "Ninguno",
+        "padecimientos": "Diabetes",
     },
     {
         "identificacion": "MARS951103HDFRNS08",
@@ -148,9 +172,17 @@ PACIENTES = [
         "apellido": "Martínez Ríos",
         "fecha_nacimiento": date(1995, 11, 3),
         "sexo": "M",
-        "telefono": "+52 55 4567 8901",
+        "telefono": "4494567890",
         "email": "santiago.martinez@email.com",
         "whatsapp": None,
+        "domicilio": "Av. Alameda 302 Col. Héroes",
+        "codigo_postal": "20190",
+        "estado_residencia": "Aguascalientes",
+        "municipio_residencia": "Aguascalientes",
+        "peso": 75.0,
+        "estatura": 1.70,
+        "derechohabiencia": "IMSS",
+        "padecimientos": "Algún familiar cuenta con enfermedad renal",
     },
     {
         "identificacion": "TOGL880220MDFRRL04",
@@ -158,109 +190,17 @@ PACIENTES = [
         "apellido": "Torres González",
         "fecha_nacimiento": date(1988, 2, 20),
         "sexo": "F",
-        "telefono": "+52 55 5678 9012",
+        "telefono": "4495678901",
         "email": None,
-        "whatsapp": "+52 55 5678 9012",
-    },
-    {
-        "identificacion": "SAVJ720814HDFLZS07",
-        "nombre": "Javier",
-        "apellido": "Salazar Vázquez",
-        "fecha_nacimiento": date(1972, 8, 14),
-        "sexo": "M",
-        "telefono": "+52 55 6789 0123",
-        "email": "javier.salazar@email.com",
-        "whatsapp": "+52 55 6789 0123",
-    },
-    {
-        "identificacion": "ROCA000419MDFSMR01",
-        "nombre": "Andrea",
-        "apellido": "Rojas Castro",
-        "fecha_nacimiento": date(2000, 4, 19),
-        "sexo": "F",
-        "telefono": "+52 55 7890 1234",
-        "email": "andrea.rojas@email.com",
-        "whatsapp": "+52 55 7890 1234",
-    },
-    {
-        "identificacion": "NUGF650930HDFRRS06",
-        "nombre": "Fernando",
-        "apellido": "Núñez Guerrero",
-        "fecha_nacimiento": date(1965, 9, 30),
-        "sexo": "M",
-        "telefono": "+52 55 8901 2345",
-        "email": "fernando.nunez@email.com",
-        "whatsapp": None,
-    },
-    {
-        "identificacion": "DIME930607MDFRXL03",
-        "nombre": "Elena",
-        "apellido": "Díaz Mendoza",
-        "fecha_nacimiento": date(1993, 6, 7),
-        "sexo": "F",
-        "telefono": "+52 55 9012 3456",
-        "email": "elena.diaz@email.com",
-        "whatsapp": "+52 55 9012 3456",
-    },
-    {
-        "identificacion": "FLRM871225HDFLPS09",
-        "nombre": "Miguel Ángel",
-        "apellido": "Flores Reyes",
-        "fecha_nacimiento": date(1987, 12, 25),
-        "sexo": "M",
-        "telefono": "+52 55 0123 4567",
-        "email": "miguel.flores@email.com",
-        "whatsapp": "+52 55 0123 4567",
-    },
-    {
-        "identificacion": "CACG010815MDFSTR02",
-        "nombre": "Gabriela",
-        "apellido": "Castañeda Cisneros",
-        "fecha_nacimiento": date(2001, 8, 15),
-        "sexo": "F",
-        "telefono": "+52 55 1357 2468",
-        "email": "gabriela.castaneda@email.com",
-        "whatsapp": "+52 55 1357 2468",
-    },
-    {
-        "identificacion": "ORAH760503HDFRRL05",
-        "nombre": "Alejandro",
-        "apellido": "Ortega Huerta",
-        "fecha_nacimiento": date(1976, 5, 3),
-        "sexo": "M",
-        "telefono": "+52 55 2468 1357",
-        "email": None,
-        "whatsapp": None,
-    },
-    {
-        "identificacion": "VELI991117MDFRPS08",
-        "nombre": "Isabel",
-        "apellido": "Velasco Lima",
-        "fecha_nacimiento": date(1999, 11, 17),
-        "sexo": "F",
-        "telefono": "+52 55 3691 4725",
-        "email": "isabel.velasco@email.com",
-        "whatsapp": "+52 55 3691 4725",
-    },
-    {
-        "identificacion": "RAMR830421HDFRNS04",
-        "nombre": "Ricardo",
-        "apellido": "Ramos Montes",
-        "fecha_nacimiento": date(1983, 4, 21),
-        "sexo": "M",
-        "telefono": "+52 55 4725 3691",
-        "email": "ricardo.ramos@email.com",
-        "whatsapp": "+52 55 4725 3691",
-    },
-    {
-        "identificacion": "PESC970209MDFRRL06",
-        "nombre": "Carolina",
-        "apellido": "Peña Soto",
-        "fecha_nacimiento": date(1997, 2, 9),
-        "sexo": "F",
-        "telefono": "+52 55 5813 9264",
-        "email": "carolina.pena@email.com",
-        "whatsapp": "+52 55 5813 9264",
+        "whatsapp": "4495678901",
+        "domicilio": "Manuel Doblado 15 Col. Centro",
+        "codigo_postal": "20000",
+        "estado_residencia": "Aguascalientes",
+        "municipio_residencia": "Aguascalientes",
+        "peso": 58.0,
+        "estatura": 1.60,
+        "derechohabiencia": "INSABI",
+        "padecimientos": "Ningún padecimiento",
     },
 ]
 
@@ -270,16 +210,13 @@ async def seed_database():
 
     engine = await get_engine()
 
-    # Importar modelos después de configurar el engine
-    # Esto asume que los modelos siguen la estructura estándar de la app.
-    # Si los modelos aún no existen, este script servirá como referencia.
     try:
-        from app.models import Base, User, Prueba, Medico, Paciente, Lote, Resultado
+        from app.models import Base, User, Prueba, Quimico, Paciente, Lote, Resultado
         from app.core.security import get_password_hash
     except ImportError:
-        print("⚠️  Los modelos de la aplicación aún no están disponibles.")
-        print("   Este script requiere que app.models y app.core.security existan.")
-        print("   Ejecutando en modo de referencia: mostrando los datos que se insertarían.\n")
+        print("[WARN] Los modelos de la aplicación no están disponibles.")
+        print("       Este script requiere que app.models y app.core.security existan.")
+        print("       Ejecutando en modo de referencia.\n")
         await _print_seed_summary()
         return
 
@@ -296,16 +233,16 @@ async def seed_database():
             if not existing.scalar_one_or_none():
                 admin = User(
                     username="admin",
-                    email="admin@labsanrafael.com",
+                    email="admin@laboratorio.com",
                     hashed_password=get_password_hash("admin123"),
                     nombre_completo="Administrador del Sistema",
                     is_active=True,
                     is_superuser=True,
                 )
                 session.add(admin)
-                print("✅ Usuario admin creado")
+                print("[OK] Usuario admin creado")
             else:
-                print("ℹ️  Usuario admin ya existe")
+                print("[INFO] Usuario admin ya existe")
 
             # ---------------------------------------------------------------
             # 2. Catálogo de pruebas
@@ -319,21 +256,21 @@ async def seed_database():
                     prueba = Prueba(**p)
                     session.add(prueba)
                     pruebas_creadas += 1
-            print(f"✅ {pruebas_creadas} pruebas creadas ({len(PRUEBAS_CATALOGO) - pruebas_creadas} ya existían)")
+            print(f"[OK] {pruebas_creadas} pruebas creadas ({len(PRUEBAS_CATALOGO) - pruebas_creadas} ya existían)")
 
             # ---------------------------------------------------------------
-            # 3. Médicos
+            # 3. Químicos
             # ---------------------------------------------------------------
-            medicos_creados = 0
-            for m in MEDICOS:
+            quimicos_creados = 0
+            for q in QUIMICOS:
                 existing = await session.execute(
-                    select(Medico).where(Medico.cedula == m["cedula"])
+                    select(Quimico).where(Quimico.cedula == q["cedula"])
                 )
                 if not existing.scalar_one_or_none():
-                    medico = Medico(**m)
-                    session.add(medico)
-                    medicos_creados += 1
-            print(f"✅ {medicos_creados} médicos creados ({len(MEDICOS) - medicos_creados} ya existían)")
+                    quimico = Quimico(**q)
+                    session.add(quimico)
+                    quimicos_creados += 1
+            print(f"[OK] {quimicos_creados} químicos creados ({len(QUIMICOS) - quimicos_creados} ya existían)")
 
             # ---------------------------------------------------------------
             # 4. Pacientes
@@ -349,7 +286,7 @@ async def seed_database():
                     paciente = Paciente(**pac)
                     session.add(paciente)
                     pacientes_creados += 1
-            print(f"✅ {pacientes_creados} pacientes creados ({len(PACIENTES) - pacientes_creados} ya existían)")
+            print(f"[OK] {pacientes_creados} pacientes creados ({len(PACIENTES) - pacientes_creados} ya existían)")
 
         # Flush para obtener IDs
         await session.commit()
@@ -365,13 +302,10 @@ async def seed_database():
             pacientes_result = await session.execute(select(Paciente))
             pacientes_db = list(pacientes_result.scalars().all())
 
-            medicos_result = await session.execute(select(Medico))
-            medicos_db = list(medicos_result.scalars().all())
-
             # Verificar si ya existen lotes
             lotes_result = await session.execute(select(Lote))
             if lotes_result.scalars().first():
-                print("ℹ️  Ya existen lotes de resultados, omitiendo creación")
+                print("[INFO] Ya existen lotes de resultados, omitiendo creación")
             else:
                 import random
 
@@ -414,11 +348,10 @@ async def seed_database():
                     registros_count = 0
                     # Asignar resultados a pacientes aleatorios
                     pacientes_lote = random.sample(
-                        pacientes_db, min(8, len(pacientes_db))
+                        pacientes_db, min(4, len(pacientes_db))
                     )
 
                     for paciente in pacientes_lote:
-                        medico = random.choice(medicos_db)
                         for codigo_prueba in lote_info["pruebas"]:
                             prueba = pruebas_db.get(codigo_prueba)
                             if not prueba:
@@ -483,7 +416,6 @@ async def seed_database():
                             resultado = Resultado(
                                 lote_id=lote.id,
                                 paciente_id=paciente.id,
-                                medico_id=medico.id,
                                 prueba_id=prueba.id,
                                 valor=valor,
                                 interpretacion=interpretacion,
@@ -497,12 +429,12 @@ async def seed_database():
                     lote.total_registros = registros_count
                     lote.registros_exitosos = registros_count
 
-                print(f"✅ 3 lotes de resultados creados con datos de ejemplo")
+                print("[OK] 3 lotes de resultados creados con datos de ejemplo")
 
         await session.commit()
 
     await engine.dispose()
-    print("\n🎉 Datos semilla cargados exitosamente.")
+    print("\n[SUCCESS] Datos semilla cargados exitosamente.")
 
 
 async def _print_seed_summary():
@@ -510,7 +442,7 @@ async def _print_seed_summary():
     print("📋 Resumen de datos semilla:")
     print(f"   - 1 usuario admin (admin/admin123)")
     print(f"   - {len(PRUEBAS_CATALOGO)} pruebas de laboratorio")
-    print(f"   - {len(MEDICOS)} médicos")
+    print(f"   - {len(QUIMICOS)} químicos")
     print(f"   - {len(PACIENTES)} pacientes")
     print(f"   - 3 lotes de resultados de ejemplo")
     print("\n📝 Catálogo de pruebas:")

@@ -59,13 +59,18 @@ export default function PerfilIndividualPage() {
   }
 
   const autorizarReporte = async () => {
-    if(!confirm("¿Autorizar el envío del último reporte a n8n?")) return;
+    if(!confirm("¿Autorizar el envío de los resultados a n8n (Puente Outlook)?")) return;
     try {
-      // Mock de autorización del reporte más reciente (en backend habría que buscar su ID)
-      await api.post(`/automation/reports/999/authorize`) // mock ID
-      alert("Reporte autorizado exitosamente")
+      const ids = resultados.map(r => r.id).filter(id => id);
+      if (ids.length === 0) {
+        alert("No hay resultados cargados para enviar.");
+        return;
+      }
+      
+      await api.post(`/envios/outlook/trigger`, { resultado_ids: ids })
+      alert("Resultados enviados exitosamente a n8n.")
     } catch(e) {
-      alert("Error autorizando: " + e.message)
+      alert("Error autorizando: " + (e.response?.data?.detail || e.message))
     }
   }
 

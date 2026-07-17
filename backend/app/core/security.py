@@ -56,3 +56,46 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+from fastapi import Header
+
+async def get_current_user_or_system(
+    db: AsyncSession = Depends(get_db),
+    authorization: str = Header(None),
+) -> Union[User, str]:
+    """
+    Permite autenticación vía JWT (usuario) o vía SYSTEM_API_KEY (sistemas como n8n).
+    Devuelve el User o 'system'.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudieron validar las credenciales",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    if not authorization:
+        raise credentials_exception
+
+    # Revisar si es API Key de sistema
+    if authorization == settings.SYSTEM_API_KEY:
+        return "system"
+    
+    # Revisar si es Bearer Token (JWT)
+    if not authorization.startswith("Bearer "):
+        raise credentials_exception
+    
+    token = authorization.split(" ")[1]
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+        
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise credentials_exception
+    return user

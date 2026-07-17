@@ -1,0 +1,382 @@
+{
+  "name": "LabResultados - Envío de resultados vía puente Outlook",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "sticky-1",
+      "name": "Nota: configuración requerida",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, -360],
+      "parameters": {
+        "width": 640,
+        "height": 280,
+        "content": "## Antes de activar\n1. Crear credencial **Header Auth** para el Webhook (header `X-Auth-Token`) y asignarla al nodo Webhook.\n2. Crear credencial **Header Auth** para la API del backend y asignarla a los dos nodos HTTP Request.\n3. Montar volúmenes en el contenedor n8n:\n   - `/data/cola_envio` → carpeta compartida de la PC Windows (outbox/, resultados/)\n   - `/data/pdfs` → carpeta del servidor donde ya existen los PDF (solo lectura)\n4. Ajustar los endpoints SUPUESTOS del backend (ver nota amarilla).\n5. El flujo se entrega INACTIVO por regla de negocio."
+      }
+    },
+    {
+      "id": "sticky-2",
+      "name": "Nota: endpoints supuestos",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [620, -360],
+      "parameters": {
+        "width": 620,
+        "height": 280,
+        "content": "## Endpoints del backend (AJUSTAR a tu FastAPI)\n**POST /api/envios/preparar**\nRecibe: `{ \"resultado_ids\": [1,2,3] }`\nDevuelve (array): `[{ \"id_envio\": 15, \"folio\": \"2026-0341\", \"nombre_destinatario\": \"Sra. María Pérez\", \"email\": \"maria@x.com\", \"pdf_filename\": \"2026-0341.pdf\" }]`\n\n**POST /api/envios/confirmar**\nRecibe el contenido del `{id}.ok.json` / `{id}.err.json` del puente:\n`{ \"id\": \"...\", \"estado\": \"enviado|error\", \"destinatario\": \"...\", \"fecha\": \"...\", \"error\": \"...\" }`\n\nn8n NO valida ni modifica datos clínicos: solo orquesta."
+      }
+    },
+    {
+      "id": "webhook-envio",
+      "name": "Webhook: enviar resultados",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-60, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "enviar-resultados",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-validar",
+      "name": "Validar payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const body = $input.first().json.body || {};\nconst ids = body.resultado_ids;\nif (!Array.isArray(ids) || ids.length === 0) {\n  throw new Error('Payload inválido: se requiere resultado_ids como array no vacío');\n}\nif (ids.length > 200) {\n  throw new Error('Máximo 200 resultados por solicitud');\n}\n// Anti-replay opcional: si el frontend manda ts (epoch seg), rechazar solicitudes viejas\nconst ts = Number(body.ts || 0);\nif (ts && Math.abs(Date.now() / 1000 - ts) > 300) {\n  throw new Error('Solicitud expirada (anti-replay)');\n}\nreturn [{ json: { resultado_ids: ids } }];"
+      }
+    },
+    {
+      "id": "http-preparar",
+      "name": "Backend: preparar envíos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/envios/preparar",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ resultado_ids: $json.resultado_ids }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-tarea",
+      "name": "Construir tarea de envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const it = $json;\nif (!it.email || !it.pdf_filename) {\n  throw new Error(`Registro incompleto para folio ${it.folio || '?'} (falta email o pdf_filename)`);\n}\nconst id = `${it.folio}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;\nconst nombre = it.nombre_destinatario || 'paciente';\nconst cuerpo = [\n  `<p>Estimado(a) ${nombre}:</p>`,\n  '<p>Le hacemos llegar en el documento adjunto los resultados del estudio realizado por el Instituto de Atención Integral de Enfermedades Renales (INAER).</p>',\n  '<p>Si tiene dudas sobre la interpretación de los resultados, le invitamos a acudir a su unidad de salud o comunicarse con nosotros.</p>',\n  '<p>Este mensaje y su adjunto contienen información confidencial dirigida exclusivamente a su destinatario. Si lo recibió por error, le pedimos eliminarlo y notificarlo a este remitente.</p>',\n  '<p>Atentamente,<br>INAER — Detección Oportuna y Registro<br>Gobierno del Estado de Aguascalientes</p>'\n].join('');\nreturn {\n  json: {\n    id,\n    para: it.email,\n    cc: '',\n    asunto: `Resultados de laboratorio — Folio ${it.folio}`,\n    cuerpo_html: cuerpo,\n    cifrar_pdf: false,\n    password_pdf: '',\n    pdf_filename: it.pdf_filename,\n    id_envio: it.id_envio ?? it.folio\n  }\n};"
+      }
+    },
+    {
+      "id": "file-leer-pdf",
+      "name": "Leer PDF del servidor",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [820, 0],
+      "parameters": {
+        "fileSelector": "=/data/pdfs/{{ $json.pdf_filename }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "file-escribir-pdf",
+      "name": "Escribir PDF en outbox",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1040, 0],
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/cola_envio/outbox/{{ $json.id }}.pdf",
+        "dataPropertyName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "convert-json",
+      "name": "Generar archivo JSON de tarea",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1260, 0],
+      "parameters": {
+        "operation": "toJson",
+        "mode": "each",
+        "options": {}
+      }
+    },
+    {
+      "id": "file-escribir-json",
+      "name": "Escribir JSON en outbox",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1480, 0],
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/cola_envio/outbox/{{ $json.id }}.json",
+        "dataPropertyName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-resumen",
+      "name": "Resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nreturn [{ json: {\n  ok: true,\n  encolados: items.length,\n  ids: items.map(i => i.json.id)\n} }];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Responder al frontend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1920, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sticky-3",
+      "name": "Nota: cierre del ciclo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 260],
+      "parameters": {
+        "width": 620,
+        "height": 180,
+        "content": "## Flujo 2: confirmaciones del puente\nCada 2 minutos revisa `/data/cola_envio/resultados/*.json` (los `.ok.json` / `.err.json` que escribe el puente), reporta el estado al backend y archiva el archivo en `procesados/`.\nSi no hay archivos, el flujo simplemente no continúa."
+      }
+    },
+    {
+      "id": "schedule",
+      "name": "Cada 2 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-60, 480],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "file-leer-conf",
+      "name": "Leer confirmaciones",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [160, 480],
+      "parameters": {
+        "fileSelector": "/data/cola_envio/resultados/*.json",
+        "options": {}
+      }
+    },
+    {
+      "id": "extract-conf",
+      "name": "Extraer contenido",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [380, 480],
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-confirmar",
+      "name": "Backend: registrar estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 480],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/envios/confirmar",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "cmd-archivar",
+      "name": "Archivar confirmación",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [820, 480],
+      "parameters": {
+        "command": "=mkdir -p /data/cola_envio/resultados/procesados && mv \"/data/cola_envio/resultados/{{ $json.id }}.{{ $json.estado === 'enviado' ? 'ok' : 'err' }}.json\" /data/cola_envio/resultados/procesados/"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: enviar resultados": {
+      "main": [
+        [
+          {
+            "node": "Validar payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar payload": {
+      "main": [
+        [
+          {
+            "node": "Backend: preparar envíos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend: preparar envíos": {
+      "main": [
+        [
+          {
+            "node": "Construir tarea de envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir tarea de envío": {
+      "main": [
+        [
+          {
+            "node": "Leer PDF del servidor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer PDF del servidor": {
+      "main": [
+        [
+          {
+            "node": "Escribir PDF en outbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir PDF en outbox": {
+      "main": [
+        [
+          {
+            "node": "Generar archivo JSON de tarea",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar archivo JSON de tarea": {
+      "main": [
+        [
+          {
+            "node": "Escribir JSON en outbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir JSON en outbox": {
+      "main": [
+        [
+          {
+            "node": "Resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen": {
+      "main": [
+        [
+          {
+            "node": "Responder al frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cada 2 minutos": {
+      "main": [
+        [
+          {
+            "node": "Leer confirmaciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer confirmaciones": {
+      "main": [
+        [
+          {
+            "node": "Extraer contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer contenido": {
+      "main": [
+        [
+          {
+            "node": "Backend: registrar estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend: registrar estado": {
+      "main": [
+        [
+          {
+            "node": "Archivar confirmación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

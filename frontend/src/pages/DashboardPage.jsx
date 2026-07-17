@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   getDashboardResumen,
   getDashboardTendencia,
@@ -6,6 +6,8 @@ import {
   getDashboardTopPruebas,
   getResultados,
   descargarReporte,
+  getDashboardMapaPacientes,
+  geocodificarPacientes,
 } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
 import {
@@ -32,10 +34,13 @@ import {
   CheckCircle,
   Eye,
   Calendar,
+  MapPin,
+  RefreshCw,
 } from 'lucide-react'
 import LoadingSkeleton from '../components/LoadingSkeleton.jsx'
 import StatCard from '../components/StatCard.jsx'
 import Badge from '../components/Badge.jsx'
+import MapaPacientes from '../components/MapaPacientes.jsx'
 
 const COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#3b82f6']
 
@@ -47,6 +52,9 @@ export default function DashboardPage() {
   const [anormales, setAnormales] = useState([])
   const [topPruebas, setTopPruebas] = useState([])
   const [recientes, setRecientes] = useState([])
+  const [mapaPuntos, setMapaPuntos] = useState([])
+  const [loadingMapa, setLoadingMapa] = useState(true)
+  const [geocodificando, setGeocodificando] = useState(false)
   
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -79,8 +87,45 @@ export default function DashboardPage() {
     }
   }
 
+  const fetchMapa = useCallback(async () => {
+    setLoadingMapa(true)
+    try {
+      const res = await getDashboardMapaPacientes()
+      setMapaPuntos(res.data)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoadingMapa(false)
+    }
+  }, [])
+
+  const handleGeocodificar = async () => {
+    setGeocodificando(true)
+    notify.info('Iniciando geocodificación… esto puede tardar según el número de pacientes.')
+    try {
+      const res = await geocodificarPacientes()
+      const { geocodificados, fallidos, sin_geocodificar_restantes } = res.data
+      if (geocodificados === 0 && fallidos === 0) {
+        notify.info('Todos los pacientes de Aguascalientes ya están geocodificados.')
+      } else {
+        notify.success(
+          `Geocodificación completa: ${geocodificados} ubicados, ${fallidos} sin resultado${
+            sin_geocodificar_restantes > 0 ? `, ${sin_geocodificar_restantes} pendientes` : ''
+          }.`
+        )
+      }
+      await fetchMapa()
+    } catch (err) {
+      notify.error('Error al geocodificar pacientes.')
+      console.error(err)
+    } finally {
+      setGeocodificando(false)
+    }
+  }
+
   useEffect(() => {
     fetchData()
+    fetchMapa()
   }, [])
 
   const handleApplyFilter = (e) => {
@@ -169,6 +214,52 @@ export default function DashboardPage() {
           value={resumen?.total_reportes || 0}
           color="emerald"
         />
+      </div>
+
+      {/* ── Mapa de Pacientes ──────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* Encabezado de la sección del mapa */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
+              <MapPin className="w-4 h-4 text-teal-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Distribución Geográfica de Pacientes</h3>
+              <p className="text-xs text-slate-400">Aguascalientes, México &mdash; OpenStreetMap</p>
+            </div>
+          </div>
+
+          {/* Botón Geocodificar */}
+          <button
+            onClick={handleGeocodificar}
+            disabled={geocodificando}
+            title="Consulta las coordenadas de los pacientes de Aguascalientes sin ubicar en el mapa"
+            className={`
+              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition
+              shadow-sm border
+              ${
+                geocodificando
+                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                  : 'bg-teal-600 hover:bg-teal-700 text-white border-teal-700 active:scale-95'
+              }
+            `}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${
+                geocodificando ? 'animate-spin' : ''
+              }`}
+            />
+            <span>
+              {geocodificando ? 'Geocodificando…' : 'Geocodificar pacientes'}
+            </span>
+          </button>
+        </div>
+
+        {/* Contenedor del mapa */}
+        <div className="h-[480px] relative">
+          <MapaPacientes puntos={mapaPuntos} loading={loadingMapa} />
+        </div>
       </div>
 
       {/* ── Charts Grid ────────────────────────────────────────── */}

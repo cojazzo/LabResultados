@@ -100,6 +100,12 @@ export const getDashboardAnormales = () =>
 export const getDashboardTopPruebas = (limit = 10) =>
   client.get('/dashboard/top-pruebas', { params: { limit } })
 
+export const getDashboardMapaPacientes = () =>
+  client.get('/dashboard/mapa-pacientes')
+
+export const geocodificarPacientes = () =>
+  client.post('/dashboard/geocodificar')
+
 // ── Catálogo ──────────────────────────────────────────────────────
 export const getPruebas = () => client.get('/catalogo/pruebas')
 
@@ -115,5 +121,11 @@ export const getQuimicos = () => client.get('/quimicos')
 export const getQuimicosActivos = () => client.get('/quimicos/activos')
 export const createQuimico = (data) => client.post('/quimicos', data)
 export const updateQuimico = (id, data) => client.put(`/quimicos/${id}`, data)
+
+// ── Usuarios (admin) ──────────────────────────────────────────────
+export const getUsuarios = () => client.get('/auth/users')
+export const createUsuario = (data) => client.post('/auth/register', data)
+export const updateUsuario = (id, data) => client.put(`/auth/users/${id}`, data)
+export const toggleUsuarioActivo = (id) => client.patch(`/auth/users/${id}/toggle-active`)
 
 export default client

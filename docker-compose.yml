@@ -61,6 +61,8 @@ services:
       - N8N_SECURE_COOKIE=false
     volumes:
       - n8n_data:/home/node/.n8n
+      - /srv/cola_envio:/data/cola_envio
+      - pdf_storage:/data/pdfs:ro
     restart: unless-stopped
 
   tunnel:

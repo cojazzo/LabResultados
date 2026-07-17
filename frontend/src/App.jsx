@@ -9,6 +9,7 @@ import CatalogoPage from './pages/CatalogoPage.jsx'
 import PerfilesPage from './pages/PerfilesPage.jsx'
 import PerfilIndividualPage from './pages/PerfilIndividualPage.jsx'
 import QuimicosPage from './pages/QuimicosPage.jsx'
+import UsuariosPage from './pages/UsuariosPage.jsx'
 
 export default function App() {
   return (
@@ -75,6 +76,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <QuimicosPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/usuarios"
+        element={
+          <ProtectedRoute>
+            <UsuariosPage />
           </ProtectedRoute>
         }
       />

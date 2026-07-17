@@ -47,6 +47,11 @@ class Paciente(Base):
     whatsapp_consent = Column(Boolean, default=False)
     result_delivery_consent = Column(Boolean, default=False)
     # ---------------------------------------
+    # --- Geocoordinadas (Nominatim / OpenStreetMap) ---
+    lat = Column(Numeric(precision=9, scale=6), nullable=True)
+    lon = Column(Numeric(precision=9, scale=6), nullable=True)
+    geocoded_at = Column(DateTime(timezone=True), nullable=True)
+    # --------------------------------------------------
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

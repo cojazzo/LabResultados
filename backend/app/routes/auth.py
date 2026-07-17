@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,12 @@ class UserRegister(BaseModel):
     password: str
     nombre_completo: str
     rol: str = "tecnico"  # admin, tecnico, quimico
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    nombre_completo: Optional[str] = None
+    rol: Optional[str] = None
+    password: Optional[str] = None  # Si viene, se actualiza el hash
 
 class UserResponse(BaseModel):
     id: int
@@ -109,3 +116,96 @@ async def get_me(current_user: User = Depends(get_current_user)):
     Retorna el perfil del usuario autenticado actual.
     """
     return current_user
+
+# ── Gestión de usuarios (solo admin) ─────────────────────────────────
+
+@router.get("/users", response_model=List[UserResponse])
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lista todos los usuarios del sistema (Solo administradores).
+    """
+    if current_user.rol != "admin" and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para ver los usuarios"
+        )
+    result = await db.execute(select(User).order_by(User.nombre_completo))
+    return result.scalars().all()
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: int,
+    user_data: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Actualiza datos de un usuario (Solo administradores).
+    """
+    if current_user.rol != "admin" and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para editar usuarios"
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if user_data.email is not None:
+        # Verificar que el email no esté en uso por otro usuario
+        existing = await db.execute(
+            select(User).where(User.email == user_data.email, User.id != user_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="El correo ya está registrado por otro usuario")
+        user.email = user_data.email
+
+    if user_data.nombre_completo is not None:
+        user.nombre_completo = user_data.nombre_completo
+
+    if user_data.rol is not None:
+        user.rol = user_data.rol
+
+    if user_data.password:
+        user.hashed_password = get_password_hash(user_data.password)
+
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+@router.patch("/users/{user_id}/toggle-active", response_model=UserResponse)
+async def toggle_user_active(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Activa o desactiva un usuario (Solo administradores).
+    No permite desactivarse a sí mismo.
+    """
+    if current_user.rol != "admin" and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para modificar usuarios"
+        )
+
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puede desactivar su propia cuenta"
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user.is_active = not user.is_active
+    await db.commit()
+    await db.refresh(user)
+    return user

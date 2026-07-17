@@ -23,7 +23,8 @@ const navItems = [
   { to: '/envios', label: 'Envíos', icon: Send },
   { to: '/catalogo', label: 'Catálogo', icon: BookOpen },
   { to: '/perfiles', label: 'Perfiles', icon: Users },
-  { to: '/quimicos', label: 'Químicos (Admin)', icon: Users, reqAdmin: true },
+  { to: '/quimicos', label: 'Químicos', icon: Users, reqAdmin: true },
+  { to: '/usuarios', label: 'Usuarios', icon: User, reqAdmin: true },
 ]
 
 const pageTitles = {
@@ -33,6 +34,8 @@ const pageTitles = {
   '/envios': 'Historial de Envíos',
   '/catalogo': 'Catálogo de Pruebas',
   '/perfiles': 'Perfiles de Pacientes',
+  '/quimicos': 'Químicos Validadores',
+  '/usuarios': 'Gestión de Usuarios',
 }
 
 export default function Layout({ children }) {
