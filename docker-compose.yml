@@ -28,8 +28,8 @@ services:
       - SECRET_KEY=production-secret-key-change-this
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=480
-      - LAB_NAME=Laboratorio ClÃ­nico
-      - LAB_ADDRESS=Av. GÃ³mez MorÃ­n S/N Col. la EstaciÃ³n C.P. 20180, Aguascalientes, Ags. Fideicomiso complejo Tres Centurias (a un costado del CHMH)
+      - LAB_NAME=Laboratorio Clínico
+      - LAB_ADDRESS=Av. Gómez Morín S/N Col. la Estación C.P. 20180, Aguascalientes, Ags. Fideicomiso complejo Tres Centurias (a un costado del CHMH)
       - LAB_PHONE=449 459 57 97
       - LAB_EMAIL=inaer.resultados@aguascalientes.gob.mx
       - MOCK_EMAIL=true
