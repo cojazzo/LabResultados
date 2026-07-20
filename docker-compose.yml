@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   db:
@@ -78,6 +78,11 @@ volumes:
   postgres_data:
   pdf_storage:
   cola_envio:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "username=INAER,password=INAER26,domain=WORKGROUP,vers=3.0"
+      device: "//192.168.1.95/outbox"
   n8n_data:
     external: true
     name: n8n_data_local
