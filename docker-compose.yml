@@ -81,7 +81,7 @@ volumes:
     driver: local
     driver_opts:
       type: cifs
-      o: "username=INAER,password=INAER26,domain=WORKGROUP,vers=3.0"
+      o: "username=INAER,password=INAER2026,domain=WORKGROUP,vers=3.0"
       device: "//192.168.1.95/outbox"
   n8n_data:
     external: true
