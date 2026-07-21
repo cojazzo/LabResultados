@@ -311,7 +311,7 @@ async def preparar_envios(
             destinatario=paciente.email if paciente.email else "sin-email@lab.com",
             estado="preparado_puente",
             intentos=0,
-            enviado_por=current_user.id
+            enviado_por=current_user.id if hasattr(current_user, 'id') else None
         )
         db.add(envio)
         await db.commit()
