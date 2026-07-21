@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # Integración con n8n
     N8N_WEBHOOK_URL: str = "http://n8n:5678/webhook/enviar-resultados"
     N8N_WEBHOOK_SECRET: str = "n8n-webhook-secret-key-change-this"
-    N8N_OUTLOOK_WEBHOOK_URL: str = "http://100.125.127.8:5678/webhook/enviar-resultados"
+    N8N_OUTLOOK_WEBHOOK_URL: str = "http://n8n:5678/webhook/enviar-resultados"
     N8N_OUTLOOK_WEBHOOK_SECRET: str = "wh_a7f938b2c4e6d5a1f09e8d7c6b5a4f3e"
 
     # Twilio (WhatsApp) - DEPRECATED en backend (se mueve a n8n)
