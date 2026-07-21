@@ -32,6 +32,14 @@ class CuestionarioClinicoInput(BaseModel):
     cocina_agua_llave: Optional[str] = None
     padecimientos: Optional[List[str]] = None
 
+class PacienteCuestionarioUpdate(BaseModel):
+    peso: Optional[float] = None
+    estatura: Optional[float] = None
+    tipo_agua: Optional[str] = None
+    cocina_agua_llave: Optional[str] = None
+    padecimientos: Optional[str] = None
+    suplemento_detalle: Optional[str] = None
+
 class PacienteDetalleResponse(BaseModel):
     id: int
     identificacion: str
@@ -158,4 +166,37 @@ async def obtener_paciente(id: int, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Paciente con ID {id} no encontrado"
         )
+    return paciente
+
+@router.patch("/pacientes/{id}/cuestionario", response_model=PacienteDetalleResponse)
+async def actualizar_cuestionario(id: int, payload: PacienteCuestionarioUpdate, db: AsyncSession = Depends(get_db)):
+    """
+    Actualiza manualmente los datos del cuestionario clínico de un paciente.
+    """
+    stmt = select(Paciente).where(Paciente.id == id)
+    result = await db.execute(stmt)
+    paciente = result.scalar_one_or_none()
+    
+    if not paciente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Paciente con ID {id} no encontrado"
+        )
+        
+    if payload.peso is not None:
+        paciente.peso = payload.peso
+    if payload.estatura is not None:
+        paciente.estatura = payload.estatura
+    if payload.tipo_agua is not None:
+        paciente.tipo_agua = payload.tipo_agua
+    if payload.cocina_agua_llave is not None:
+        paciente.cocina_agua_llave = payload.cocina_agua_llave
+    if payload.padecimientos is not None:
+        paciente.padecimientos = payload.padecimientos
+    if payload.suplemento_detalle is not None:
+        paciente.suplemento_detalle = payload.suplemento_detalle
+        
+    await db.commit()
+    await db.refresh(paciente)
+    
     return paciente

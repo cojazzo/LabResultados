@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router'
-import { User, Activity, Mail, Phone, Calendar, ArrowLeft, Send, CheckCircle2 } from 'lucide-react'
+import { User, Activity, Mail, Phone, Calendar, ArrowLeft, Send, CheckCircle2, Edit2, Save, X } from 'lucide-react'
 import api from '../api/client.js'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import {
@@ -19,6 +19,9 @@ export default function PerfilIndividualPage() {
   const [paciente, setPaciente] = useState(null)
   const [resultados, setResultados] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isEditingCuestionario, setIsEditingCuestionario] = useState(false)
+  const [editFormData, setEditFormData] = useState({})
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     fetchPerfil()
@@ -71,6 +74,44 @@ export default function PerfilIndividualPage() {
       alert("Resultados enviados exitosamente a n8n.")
     } catch(e) {
       alert("Error autorizando: " + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  const handleEditClick = () => {
+    setEditFormData({
+      peso: paciente.peso || '',
+      estatura: paciente.estatura || '',
+      tipo_agua: paciente.tipo_agua || '',
+      cocina_agua_llave: paciente.cocina_agua_llave || '',
+      padecimientos: paciente.padecimientos || '',
+      suplemento_detalle: paciente.suplemento_detalle || ''
+    })
+    setIsEditingCuestionario(true)
+  }
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target
+    setEditFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleSaveCuestionario = async () => {
+    try {
+      setSaving(true)
+      const payload = {
+        peso: editFormData.peso ? parseFloat(editFormData.peso) : null,
+        estatura: editFormData.estatura ? parseFloat(editFormData.estatura) : null,
+        tipo_agua: editFormData.tipo_agua || null,
+        cocina_agua_llave: editFormData.cocina_agua_llave || null,
+        padecimientos: editFormData.padecimientos || null,
+        suplemento_detalle: editFormData.suplemento_detalle || null
+      }
+      const res = await api.patch(`/pacientes/${id}/cuestionario`, payload)
+      setPaciente(res.data)
+      setIsEditingCuestionario(false)
+    } catch (error) {
+      alert("Error guardando los datos: " + (error.response?.data?.detail || error.message))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -145,19 +186,67 @@ export default function PerfilIndividualPage() {
             </div>
 
             {/* Datos del Cuestionario */}
-            {(paciente.peso || paciente.estatura || paciente.padecimientos || paciente.tipo_agua) && (
-              <div className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600 space-y-2">
-                <h3 className="font-semibold text-slate-800 mb-2">Datos Clínicos Adicionales</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {paciente.peso && <div><span className="font-medium">Peso:</span> {paciente.peso} kg</div>}
-                  {paciente.estatura && <div><span className="font-medium">Estatura:</span> {paciente.estatura} cm</div>}
-                  {paciente.tipo_agua && <div><span className="font-medium">Tipo de Agua:</span> {paciente.tipo_agua}</div>}
-                  {paciente.cocina_agua_llave && <div><span className="font-medium">Cocina c/ Llave:</span> {paciente.cocina_agua_llave}</div>}
-                  {paciente.padecimientos && <div className="col-span-2"><span className="font-medium">Padecimientos:</span> {paciente.padecimientos}</div>}
-                  {paciente.suplemento_detalle && <div className="col-span-2"><span className="font-medium">Suplementos:</span> {paciente.suplemento_detalle}</div>}
-                </div>
+            <div className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600 space-y-2">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-slate-800">Datos Clínicos Adicionales</h3>
+                {!isEditingCuestionario ? (
+                  <button onClick={handleEditClick} className="text-emerald-600 hover:text-emerald-700 p-1 flex items-center gap-1 text-xs font-medium">
+                    <Edit2 className="w-3 h-3" /> Editar
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setIsEditingCuestionario(false)} className="text-slate-500 hover:text-slate-700 p-1 flex items-center gap-1 text-xs font-medium" disabled={saving}>
+                      <X className="w-3 h-3" /> Cancelar
+                    </button>
+                    <button onClick={handleSaveCuestionario} className="text-emerald-600 hover:text-emerald-700 p-1 flex items-center gap-1 text-xs font-medium bg-emerald-50 rounded px-2" disabled={saving}>
+                      <Save className="w-3 h-3" /> {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+              
+              {!isEditingCuestionario ? (
+                (paciente.peso || paciente.estatura || paciente.padecimientos || paciente.tipo_agua || paciente.suplemento_detalle || paciente.cocina_agua_llave) ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {paciente.peso && <div><span className="font-medium">Peso:</span> {paciente.peso} kg</div>}
+                    {paciente.estatura && <div><span className="font-medium">Estatura:</span> {paciente.estatura} cm</div>}
+                    {paciente.tipo_agua && <div><span className="font-medium">Tipo de Agua:</span> {paciente.tipo_agua}</div>}
+                    {paciente.cocina_agua_llave && <div><span className="font-medium">Cocina c/ Llave:</span> {paciente.cocina_agua_llave}</div>}
+                    {paciente.padecimientos && <div className="col-span-2"><span className="font-medium">Padecimientos:</span> {paciente.padecimientos}</div>}
+                    {paciente.suplemento_detalle && <div className="col-span-2"><span className="font-medium">Suplementos:</span> {paciente.suplemento_detalle}</div>}
+                  </div>
+                ) : (
+                  <div className="text-slate-400 italic">No hay datos clínicos registrados.</div>
+                )
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Peso (kg)</label>
+                    <input type="number" step="0.1" name="peso" value={editFormData.peso} onChange={handleEditChange} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Estatura (cm)</label>
+                    <input type="number" step="0.1" name="estatura" value={editFormData.estatura} onChange={handleEditChange} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Tipo de Agua</label>
+                    <input type="text" name="tipo_agua" value={editFormData.tipo_agua} onChange={handleEditChange} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Cocina c/ Llave</label>
+                    <input type="text" name="cocina_agua_llave" value={editFormData.cocina_agua_llave} onChange={handleEditChange} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Padecimientos</label>
+                    <textarea name="padecimientos" value={editFormData.padecimientos} onChange={handleEditChange} rows={2} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Suplementos</label>
+                    <textarea name="suplemento_detalle" value={editFormData.suplemento_detalle} onChange={handleEditChange} rows={2} className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none" />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
