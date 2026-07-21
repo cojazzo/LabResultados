@@ -7,6 +7,8 @@ from app.models import Envio, User, ReporteGenerado
 from app.core.security import get_current_user, get_current_user_or_system
 from app.services.email_sender import send_report_email
 from app.services.whatsapp_sender import send_report_whatsapp
+from datetime import datetime, timedelta
+import os
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Any
 from datetime import datetime
