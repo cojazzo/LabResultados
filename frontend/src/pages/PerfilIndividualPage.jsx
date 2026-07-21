@@ -79,6 +79,9 @@ export default function PerfilIndividualPage() {
 
   const handleEditClick = () => {
     setEditFormData({
+      identificacion: paciente.identificacion || '',
+      email: paciente.email || '',
+      telefono: paciente.telefono || paciente.whatsapp || '',
       peso: paciente.peso || '',
       estatura: paciente.estatura || '',
       tipo_agua: paciente.tipo_agua || '',
@@ -98,6 +101,10 @@ export default function PerfilIndividualPage() {
     try {
       setSaving(true)
       const payload = {
+        identificacion: editFormData.identificacion || null,
+        email: editFormData.email || null,
+        telefono: editFormData.telefono || null,
+        whatsapp: editFormData.telefono || null,
         peso: editFormData.peso ? parseFloat(editFormData.peso) : null,
         estatura: editFormData.estatura ? parseFloat(editFormData.estatura) : null,
         tipo_agua: editFormData.tipo_agua || null,
@@ -155,9 +162,13 @@ export default function PerfilIndividualPage() {
                 {paciente.nombre} {paciente.apellido} {paciente.apellido_materno || ''}
               </h2>
               <div className="flex flex-wrap gap-3 mt-2 text-sm">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-mono">
-                  {paciente.identificacion}
-                </span>
+                {!isEditingCuestionario ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-mono">
+                    {paciente.identificacion}
+                  </span>
+                ) : (
+                  <input type="text" name="identificacion" value={editFormData.identificacion} onChange={handleEditChange} placeholder="CURP" className="px-3 py-1 text-sm border border-slate-200 rounded-full focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                )}
                 {paciente.sexo && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-600">
                     <User className="w-3.5 h-3.5" />
@@ -175,13 +186,25 @@ export default function PerfilIndividualPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-slate-600 border-t border-slate-100 pt-4">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-slate-400" />
-                {paciente.email || 'Sin correo electrónico'}
-                {paciente.email_consent && <CheckCircle2 className="w-3 h-3 text-emerald-500" title="Consentimiento dado" />}
+                {!isEditingCuestionario ? (
+                  <>
+                    {paciente.email || 'Sin correo electrónico'}
+                    {paciente.email_consent && <CheckCircle2 className="w-3 h-3 text-emerald-500" title="Consentimiento dado" />}
+                  </>
+                ) : (
+                  <input type="email" name="email" value={editFormData.email} onChange={handleEditChange} placeholder="Correo electrónico" className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-slate-400" />
-                {paciente.whatsapp || paciente.telefono || 'Sin teléfono'}
-                {paciente.whatsapp_consent && <CheckCircle2 className="w-3 h-3 text-emerald-500" title="Consentimiento dado" />}
+                {!isEditingCuestionario ? (
+                  <>
+                    {paciente.whatsapp || paciente.telefono || 'Sin teléfono'}
+                    {paciente.whatsapp_consent && <CheckCircle2 className="w-3 h-3 text-emerald-500" title="Consentimiento dado" />}
+                  </>
+                ) : (
+                  <input type="text" name="telefono" value={editFormData.telefono} onChange={handleEditChange} placeholder="Teléfono" className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                )}
               </div>
             </div>
 

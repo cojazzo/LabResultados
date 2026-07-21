@@ -33,6 +33,10 @@ class CuestionarioClinicoInput(BaseModel):
     padecimientos: Optional[List[str]] = None
 
 class PacienteCuestionarioUpdate(BaseModel):
+    identificacion: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
     peso: Optional[float] = None
     estatura: Optional[float] = None
     tipo_agua: Optional[str] = None
@@ -182,6 +186,15 @@ async def actualizar_cuestionario(id: int, payload: PacienteCuestionarioUpdate, 
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Paciente con ID {id} no encontrado"
         )
+        
+    if payload.identificacion is not None:
+        paciente.identificacion = payload.identificacion.strip().upper()
+    if payload.email is not None:
+        paciente.email = payload.email.strip() if payload.email.strip() else None
+    if payload.telefono is not None:
+        paciente.telefono = payload.telefono.strip() if payload.telefono.strip() else None
+    if payload.whatsapp is not None:
+        paciente.whatsapp = payload.whatsapp.strip() if payload.whatsapp.strip() else None
         
     if payload.peso is not None:
         paciente.peso = payload.peso
