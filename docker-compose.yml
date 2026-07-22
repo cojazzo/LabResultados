@@ -73,6 +73,24 @@ services:
     restart: unless-stopped
     depends_on:
       - n8n
+  ews:
+    build:
+      context: ./backend/email_service
+      dockerfile: Dockerfile
+    ports:
+      - "8765:8765"
+    env_file:
+      - ./backend/email_service/.env
+    volumes:
+      - "./backend/email_service:/app"
+      - "/data/pdfs:/app/data/pdfs"
+    networks:
+      default:
+        aliases:
+          - ews.lab
+    environment:
+      - EWS_USERNAME=${EWS_USERNAME:-gobags\inaer.resultados}
+      - EWS_PASSWORD=${EWS_PASSWORD}
 
 volumes:
   postgres_data:
