@@ -77,20 +77,18 @@ services:
     build:
       context: ./backend/email_service
       dockerfile: Dockerfile
-    ports:
-      - "8765:8765"
     env_file:
       - ./backend/email_service/.env
-    volumes:
-      - "./backend/email_service:/app"
-      - "/data/pdfs:/app/data/pdfs"
-    networks:
-      default:
-        aliases:
-          - ews.lab
     environment:
       - EWS_USERNAME=${EWS_USERNAME:-gobags\inaer.resultados}
       - EWS_PASSWORD=${EWS_PASSWORD}
+      - EWS_API_KEY=${EWS_API_KEY}
+      - EWS_URL=${EWS_URL}
+    volumes:
+      - /data/pdfs:/app/data/pdfs
+    networks:
+      - default
+    restart: unless-stopped
 
 volumes:
   postgres_data:

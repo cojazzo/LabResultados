@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Intentar importar exchangelib
 try:
-    from exchangelib import Account, Configuration, NTLM, Message, Mailbox, HTMLBody, FileAttachment
+    from exchangelib import Account, Configuration, Credentials, NTLM, Message, Mailbox, HTMLBody, FileAttachment
+    from exchangelib.protocol import BaseProtocol, NoVerifyHTTPAdapter
 except ImportError as e:
     logger.error(f"exchangelib no instalado: {e}")
     logger.error("Instala con: pip3 install exchangelib --break-system-packages")
@@ -99,11 +100,11 @@ async def send_email(request: EmailRequest, x_api_key: Optional[str] = Header(No
     try:
         logger.info(f"📧 Enviando email a: {request.to}")
         
+        BaseProtocol.HTTP_ADAPTER_CLS = NoVerifyHTTPAdapter
         config = Configuration(
             server=EWS_URL,
-            credentials=(EWS_USERNAME, EWS_PASSWORD),
+            credentials=Credentials(EWS_USERNAME, EWS_PASSWORD),
             auth_type=NTLM,
-            verify_certificate=False
         )
         
         account = Account(
@@ -135,15 +136,10 @@ async def send_email(request: EmailRequest, x_api_key: Optional[str] = Header(No
         
         if request.attachments:
             for att in request.attachments:
-                try:
-                    content_bytes = base64.b64decode(att.content_base64)
-                    attachment = FileAttachment(name=att.filename, content=content_bytes)
-                    msg.attachments.add(attachment)
-                    logger.info(f"📎 Adjunto agregado: {att.filename} ({len(content_bytes)/1024:.1f} KB)")
-                except Exception as e:
-                    logger.error(f"❌ Error decodificando adjunto {att.filename}: {e}")
-                    continue
-        
+                content_bytes = base64.b64decode(att.content_base64)
+                attachment = FileAttachment(name=att.filename, content=content_bytes)
+                msg.attachments.append(attachment)
+                logger.info(f"📎 Adjunto agregado: {att.filename} ({len(content_bytes)/1024:.1f} KB)")
         msg.send()
         logger.info(f"✅ Email enviado correctamente a {to_list}")
         

@@ -1,4 +1,4 @@
 fastapi
 uvicorn
-exchangelib
+exchangelib==5.6.0
 pydantic

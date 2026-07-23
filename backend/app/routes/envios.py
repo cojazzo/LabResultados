@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, and_
+from sqlalchemy import select, desc, and_, String, func
 from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Envio, User, ReporteGenerado
