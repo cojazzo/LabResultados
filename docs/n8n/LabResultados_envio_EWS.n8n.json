@@ -1,0 +1,328 @@
+{
+  "name": "LabResultados - Envío de resultados vía EWS",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Antes de activar\n1. Crear credencial **Header Auth** para la API del backend y asignarla a los nodos HTTP Request de preparar y confirmar.\n2. Crear credencial **Header Auth** para la API EWS (`X-API-Key`) y asignarla al nodo HTTP Request EWS.\n3. Asegurarse que el contenedor n8n tiene acceso a `/data/pdfs`.\n4. El flujo se entrega INACTIVO.",
+        "height": 280,
+        "width": 640
+      },
+      "id": "ad33234f-4107-4679-baac-22013cca2be2",
+      "name": "Nota: configuración requerida",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Endpoints del backend (AJUSTAR a tu FastAPI)\n**POST /api/envios/preparar**\n**POST /api/envios/confirmar**\n\nEl webhook responde rápido al frontend, y en paralelo procesa los correos.",
+        "height": 280,
+        "width": 620
+      },
+      "id": "a103cc74-f57f-4167-9c67-21897961321e",
+      "name": "Nota: endpoints supuestos",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1728,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "enviar-resultados",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "59a2087c-16bb-4f78-9546-5dc07940a749",
+      "name": "Webhook: enviar resultados",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        432
+      ],
+      "webhookId": "adfff61c-efe7-4b4d-9466-ee8b8cd5b2f7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst ids = body.resultado_ids;\nif (!Array.isArray(ids) || ids.length === 0) {\n  throw new Error('Payload inválido: se requiere resultado_ids como array no vacío');\n}\nif (ids.length > 200) {\n  throw new Error('Máximo 200 resultados por solicitud');\n}\n// Anti-replay opcional: si el frontend manda ts (epoch seg), rechazar solicitudes viejas\nconst ts = Number(body.ts || 0);\nif (ts && Math.abs(Date.now() / 1000 - ts) > 300) {\n  throw new Error('Solicitud expirada (anti-replay)');\n}\nreturn [{ json: { resultado_ids: ids } }];"
+      },
+      "id": "f05b4128-1efb-486e-96b7-e00460eaa488",
+      "name": "Validar payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/envios/preparar",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ resultado_ids: $json.resultado_ids }) }}",
+        "options": {}
+      },
+      "id": "a392be9f-d573-422a-b6ca-b5c769e74384",
+      "name": "Backend: preparar envíos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        432
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sX3Ei18BcKmow1oO",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const it = $json;\nif (!it.email || !it.pdf_filename) {\n  throw new Error(`Registro incompleto para folio ${it.folio || '?'} (falta email o pdf_filename)`);\n}\nconst id = `${it.folio}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;\nconst nombre = it.nombre_destinatario || 'paciente';\nconst cuerpo = [\n  `<p>Estimado(a) ${nombre}:</p>`,\n  '<p>Le hacemos llegar en el documento adjunto los resultados del estudio realizado por el Instituto de Atención Integral de Enfermedades Renales (INAER).</p>',\n  '<p>Si tiene dudas sobre la interpretación de los resultados, le invitamos a acudir a su unidad de salud o comunicarse con nosotros.</p>',\n  '<p>Este mensaje y su adjunto contienen información confidencial dirigida exclusivamente a su destinatario. Si lo recibió por error, le pedimos eliminarlo y notificarlo a este remitente.</p>',\n  '<p>Atentamente,<br>INAER — Detección Oportuna y Registro<br>Gobierno del Estado de Aguascalientes</p>'\n].join('');\nreturn {\n  json: {\n    id,\n    para: it.email,\n    cc: '',\n    asunto: `Resultados de laboratorio — Folio ${it.folio}`,\n    cuerpo_html: cuerpo,\n    cifrar_pdf: false,\n    password_pdf: '',\n    pdf_filename: it.pdf_filename,\n    id_envio: it.id_envio ?? it.folio\n  }\n};"
+      },
+      "id": "3fcab64f-be7b-45fe-9a8b-8ca508378447",
+      "name": "Construir tarea de envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn [{ json: {\n  ok: true,\n  encolados: items.length,\n  ids: items.map(i => i.json.id)\n} }];"
+      },
+      "id": "353a632f-44b4-4299-9c62-b398e751f453",
+      "name": "Resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "6e87196f-7dae-46b6-8781-4da818f164d7",
+      "name": "Responder al frontend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3024,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Adjunta el PDF como base64 leyendo el buffer real del binario.\n// Funciona con binario en modo filesystem o in-memory (independiente de N8N_DEFAULT_BINARY_DATA_MODE).\nconst entradas = $input.all();\nconst salida = [];\nfor (let i = 0; i < entradas.length; i++) {\n  const buffer = await this.helpers.getBinaryDataBuffer(i, 'data');\n  salida.push({\n    json: {\n      ...entradas[i].json,\n      pdf_base64: buffer.toString('base64'),\n    },\n    pairedItem: { item: i },\n  });\n}\nreturn salida;"
+      },
+      "id": "7de6ba7a-92a7-4d9f-9839-7b83d976ca74",
+      "name": "Preparar Base64 y JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ews:8765/send-email",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $json.para, subject: $json.asunto, body: $json.cuerpo_html, is_html: true, attachments: [{ filename: $json.pdf_filename, content_base64: $json.pdf_base64 }] }) }}",
+        "options": {}
+      },
+      "id": "20b49e6a-e963-465e-b4e3-b5d999cbc9bc",
+      "name": "Enviar Email via EWS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2368,
+        576
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "LvD3yRdG83aGy3xR",
+          "name": "Header Auth account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/envios/confirmar",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Construir tarea de envío').item.json.id, estado: 'enviado', destinatario: $('Construir tarea de envío').item.json.para, fecha: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "3ce2a67e-307f-425b-a238-516b6c5b3448",
+      "name": "Backend: confirmar éxito",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2592,
+        576
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sX3Ei18BcKmow1oO",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:8000/storage/pdfs/{{ $json.pdf_filename }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1920,
+        576
+      ],
+      "id": "e193cbe3-2076-451a-9120-06ce83d45efb",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook: enviar resultados": {
+      "main": [
+        [
+          {
+            "node": "Validar payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar payload": {
+      "main": [
+        [
+          {
+            "node": "Backend: preparar envíos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend: preparar envíos": {
+      "main": [
+        [
+          {
+            "node": "Construir tarea de envío",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen": {
+      "main": [
+        [
+          {
+            "node": "Responder al frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir tarea de envío": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Base64 y JSON": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email via EWS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email via EWS": {
+      "main": [
+        [
+          {
+            "node": "Backend: confirmar éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Preparar Base64 y JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a280c1f5-78eb-4cd6-b1bc-b6b46230e3a0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f712cca0791d126444f46363d10c99d522b365f68056db6b610ffc93ff5003a5"
+  },
+  "nodeGroups": [],
+  "id": "qLnFlu4rdFFIqnMs",
+  "tags": []
+}
