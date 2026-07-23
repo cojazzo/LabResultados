@@ -43,6 +43,14 @@ export const uploadExcel = (files) => {
   })
 }
 
+export const uploadTamizajeExcel = (files) => {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  return client.post('/upload/tamizaje', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 export const getLotes = (page = 1) =>
   client.get('/upload/lotes', { params: { page } })
 

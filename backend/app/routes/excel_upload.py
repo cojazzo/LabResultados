@@ -5,7 +5,7 @@ from sqlalchemy import select, func, desc
 from app.database import get_db
 from app.models import Lote, User
 from app.core.security import get_current_user
-from app.services.excel_parser import process_excel_file
+from app.services.excel_parser import process_excel_file, process_tamizaje_excel
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -86,6 +86,66 @@ async def upload_excel(
         "lotes": lotes_procesados,
         "mensaje": f"Se procesaron {len(lotes_procesados)} archivo(s) exitosamente."
     }
+
+@router.post("/tamizaje", response_model=UploadResponse)
+async def upload_tamizaje(
+    files: List[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sube uno o varios archivos Excel (.xlsx) de tamizaje (Google Forms) y procesa su contenido.
+    """
+    lotes_procesados = []
+    
+    for file in files:
+        if not file.filename.endswith((".xlsx", ".xls")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El archivo '{file.filename}' no es un archivo Excel válido (.xlsx o .xls)"
+            )
+            
+        file_content = await file.read()
+        try:
+            resultado = await process_tamizaje_excel(
+                db=db,
+                file_content=file_content,
+                filename=file.filename,
+                usuario_id=current_user.id
+            )
+            lote = resultado["lote"]
+            
+            # Formatear el log_errores si existe
+            log_err = None
+            if lote.log_errores:
+                try:
+                    log_err = json.loads(lote.log_errores)
+                except Exception:
+                    log_err = [{"error": lote.log_errores}]
+                    
+            lotes_procesados.append(
+                LoteResponse(
+                    id=lote.id,
+                    nombre=lote.nombre,
+                    fecha_carga=lote.fecha_carga,
+                    estado=lote.estado,
+                    total_registros=lote.total_registros,
+                    registros_exitosos=lote.registros_exitosos,
+                    registros_error=lote.registros_error,
+                    log_errores=log_err
+                )
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error procesando el archivo de tamizaje '{file.filename}': {str(e)}"
+            )
+            
+    return {
+        "lotes": lotes_procesados,
+        "mensaje": f"Se procesaron {len(lotes_procesados)} archivo(s) de tamizaje exitosamente."
+    }
+
 
 @router.get("/lotes", response_model=List[LoteResponse])
 async def get_lotes(

@@ -575,3 +575,196 @@ async def calculate_missing_acr(db: AsyncSession, lote_id: int):
                     )
                     db.add(new_acr)
     await db.flush()
+
+async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename: str, usuario_id: int) -> dict:
+    """
+    Lee y valida un archivo Excel de tamizaje de pacientes (Google Forms), creando o actualizando los perfiles.
+    """
+    lote = Lote(
+        nombre=filename,
+        descripcion=f"Carga de Tamizaje {filename}",
+        usuario_id=usuario_id,
+        estado="procesando",
+        total_registros=0,
+        registros_exitosos=0,
+        registros_error=0,
+        log_errores=None
+    )
+    db.add(lote)
+    await db.commit()
+    await db.refresh(lote)
+
+    errors = []
+    exitosos = 0
+    erroneos = 0
+
+    try:
+        df = pd.read_excel(io.BytesIO(file_content), keep_default_na=False)
+        df = df.replace("", None)
+    except Exception as e:
+        lote.estado = "error"
+        lote.log_errores = json.dumps([{"fila": 0, "columna": "archivo", "error": f"No se pudo leer el archivo: {str(e)}", "valor": ""}])
+        await db.commit()
+        return {"lote": lote, "resumen": {"exitosos": 0, "erroneos": 0}}
+
+    total_filas = len(df)
+    if total_filas == 0:
+        lote.estado = "error"
+        lote.log_errores = json.dumps([{"fila": 0, "columna": "archivo", "error": "El archivo Excel está vacío", "valor": ""}])
+        await db.commit()
+        return {"lote": lote, "resumen": {"exitosos": 0, "erroneos": 0}}
+
+    cols = {normalize_column_name(col): col for col in df.columns}
+    
+    mappings = {
+        "fecha": ["fecha"],
+        "nombre": ["nombre"],
+        "apellido_paterno": ["apellido_paterno"],
+        "apellido_materno": ["apellido_materno"],
+        "sexo": ["sexo"],
+        "telefono": ["telefono_de_contacto"],
+        "email": ["correo_electronico"],
+        "fecha_nacimiento": ["fecha_de_nacimiento"],
+        "edad": ["edad"],
+        "estado_origen": ["estado_de_origen"],
+        "curp": ["curp"],
+        "domicilio": ["domicilio_calle_numero_colonia"],
+        "codigo_postal": ["codigo_postal"],
+        "estado_residencia": ["estado_de_residencia"],
+        "municipio": ["muncipio_de_residencia", "municipio_de_residencia"],
+        "peso": ["peso"],
+        "estatura": ["estatura"],
+        "derechohabiencia": ["derechohabiencia"],
+        "suplemento": ["toma_alg_n_suplemento", "suplemento", "toma_algun_suplemento", "toma_alg"],
+        "tipo_agua": ["_que_tipo_de_agua_toma", "tipo_agua", "que_tipo_de_agua_toma", "que_tipo"],
+        "cocina_agua": ["_cocina_con_agua_de_la_llave", "cocina_agua", "cocina_con_agua_de_la_llave", "cocina_con_agua"],
+        "padecimientos": ["padecimientos_seleccionar_1_o_varios", "padecimientos"]
+    }
+    
+    resolved_meta = {}
+    for key, alternatives in mappings.items():
+        found_col = None
+        for alt in alternatives:
+            for c_norm in cols:
+                if alt in c_norm:
+                    found_col = cols[c_norm]
+                    break
+            if found_col:
+                break
+        resolved_meta[key] = found_col
+
+    for index, row in df.iterrows():
+        fila_num = index + 2
+        
+        curp = str(row[resolved_meta["curp"]]).strip().upper() if resolved_meta.get("curp") and pd.notna(row[resolved_meta["curp"]]) else ""
+        nombre = str(row[resolved_meta["nombre"]]).strip() if resolved_meta.get("nombre") and pd.notna(row[resolved_meta["nombre"]]) else ""
+        ap_pat = str(row[resolved_meta["apellido_paterno"]]).strip() if resolved_meta.get("apellido_paterno") and pd.notna(row[resolved_meta["apellido_paterno"]]) else ""
+        ap_mat = str(row[resolved_meta["apellido_materno"]]).strip() if resolved_meta.get("apellido_materno") and pd.notna(row[resolved_meta["apellido_materno"]]) else ""
+        
+        sexo_raw = str(row[resolved_meta["sexo"]]).strip().lower() if resolved_meta.get("sexo") and pd.notna(row[resolved_meta["sexo"]]) else ""
+        sexo = "M" if "masculino" in sexo_raw else ("F" if "femenino" in sexo_raw else None)
+        
+        if not curp and not nombre:
+            erroneos += 1
+            errors.append({"fila": fila_num, "columna": "identidad", "error": "Falta CURP y Nombre", "valor": ""})
+            continue
+
+        paciente_id_val = match_patient_identifier(curp, nombre, ap_pat, sexo)
+        if not paciente_id_val:
+            paciente_id_val = curp if curp else f"{nombre.split()[0].upper()[:4]}{ap_pat.upper()[:2]}XXXXXX"
+
+        paciente_res = await db.execute(select(Paciente).where(Paciente.identificacion == paciente_id_val))
+        paciente = paciente_res.scalar_one_or_none()
+
+        fn_raw = row[resolved_meta["fecha_nacimiento"]] if resolved_meta.get("fecha_nacimiento") else None
+        fn = parse_date(fn_raw) if fn_raw else None
+
+        tel = str(row[resolved_meta["telefono"]]).strip() if resolved_meta.get("telefono") and pd.notna(row[resolved_meta["telefono"]]) else None
+        email = str(row[resolved_meta["email"]]).strip() if resolved_meta.get("email") and pd.notna(row[resolved_meta["email"]]) else None
+        domicilio = str(row[resolved_meta["domicilio"]]).strip() if resolved_meta.get("domicilio") and pd.notna(row[resolved_meta["domicilio"]]) else None
+        cp = str(row[resolved_meta["codigo_postal"]]).strip() if resolved_meta.get("codigo_postal") and pd.notna(row[resolved_meta["codigo_postal"]]) else None
+        edo_res = str(row[resolved_meta["estado_residencia"]]).strip() if resolved_meta.get("estado_residencia") and pd.notna(row[resolved_meta["estado_residencia"]]) else None
+        mun_res = str(row[resolved_meta["municipio"]]).strip() if resolved_meta.get("municipio") and pd.notna(row[resolved_meta["municipio"]]) else None
+        derecho = str(row[resolved_meta["derechohabiencia"]]).strip() if resolved_meta.get("derechohabiencia") and pd.notna(row[resolved_meta["derechohabiencia"]]) else None
+        sup = str(row[resolved_meta["suplemento"]]).strip() if resolved_meta.get("suplemento") and pd.notna(row[resolved_meta["suplemento"]]) else None
+        t_agua = str(row[resolved_meta["tipo_agua"]]).strip() if resolved_meta.get("tipo_agua") and pd.notna(row[resolved_meta["tipo_agua"]]) else None
+        c_agua = str(row[resolved_meta["cocina_agua"]]).strip() if resolved_meta.get("cocina_agua") and pd.notna(row[resolved_meta["cocina_agua"]]) else None
+        pad = str(row[resolved_meta["padecimientos"]]).strip() if resolved_meta.get("padecimientos") and pd.notna(row[resolved_meta["padecimientos"]]) else None
+        
+        peso_raw = row[resolved_meta["peso"]] if resolved_meta.get("peso") else None
+        peso = None
+        if peso_raw:
+            try:
+                peso = Decimal(str(peso_raw))
+            except: pass
+            
+        est_raw = row[resolved_meta["estatura"]] if resolved_meta.get("estatura") else None
+        estatura = None
+        if est_raw:
+            try:
+                estatura = Decimal(str(est_raw))
+            except: pass
+
+        if not paciente:
+            paciente = Paciente(
+                identificacion=paciente_id_val,
+                nombre=nombre,
+                apellido=ap_pat,
+                apellido_materno=ap_mat,
+                fecha_nacimiento=fn,
+                sexo=sexo,
+                telefono=tel,
+                email=email,
+                domicilio=domicilio,
+                codigo_postal=cp,
+                estado_residencia=edo_res,
+                municipio_residencia=mun_res,
+                peso=peso,
+                estatura=estatura,
+                derechohabiencia=derecho,
+                suplemento_detalle=sup,
+                tipo_agua=t_agua,
+                cocina_agua_llave=c_agua,
+                padecimientos=pad
+            )
+            db.add(paciente)
+        else:
+            if nombre: paciente.nombre = nombre
+            if ap_pat: paciente.apellido = ap_pat
+            if ap_mat: paciente.apellido_materno = ap_mat
+            if fn: paciente.fecha_nacimiento = fn
+            if sexo: paciente.sexo = sexo
+            if tel: paciente.telefono = tel
+            if email: paciente.email = email
+            if domicilio: paciente.domicilio = domicilio
+            if cp: paciente.codigo_postal = cp
+            if edo_res: paciente.estado_residencia = edo_res
+            if mun_res: paciente.municipio_residencia = mun_res
+            if peso is not None: paciente.peso = peso
+            if estatura is not None: paciente.estatura = estatura
+            if derecho: paciente.derechohabiencia = derecho
+            if sup: paciente.suplemento_detalle = sup
+            if t_agua: paciente.tipo_agua = t_agua
+            if c_agua: paciente.cocina_agua_llave = c_agua
+            if pad: paciente.padecimientos = pad
+
+        exitosos += 1
+
+    lote.total_registros = total_filas
+    lote.registros_exitosos = exitosos
+    lote.registros_error = erroneos
+
+    if erroneos == 0:
+        lote.estado = "completado"
+    elif exitosos == 0:
+        lote.estado = "error"
+    else:
+        lote.estado = "error_parcial"
+
+    if errors:
+        lote.log_errores = json.dumps(errors)
+
+    await db.commit()
+    await db.refresh(lote)
+    return {"lote": lote, "resumen": {"exitosos": exitosos, "erroneos": erroneos}}
+

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { uploadExcel, getLotes, generarMasivo } from '../api/client.js'
+import { uploadExcel, uploadTamizajeExcel, getLotes, generarMasivo } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
-import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send, Users } from 'lucide-react'
 import Badge from '../components/Badge.jsx'
 import Modal from '../components/Modal.jsx'
 import Pagination from '../components/Pagination.jsx'
@@ -23,6 +23,9 @@ export default function UploadPage() {
   
   // Reportes masivos
   const [generatingBatch, setGeneratingBatch] = useState(false)
+  
+  // Tipo de subida
+  const [uploadType, setUploadType] = useState('resultados') // 'resultados' o 'tamizaje'
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -82,7 +85,12 @@ export default function UploadPage() {
     setUploading(true)
     try {
       notify.info('Subiendo y procesando archivos...')
-      const response = await uploadExcel(selectedFiles)
+      let response
+      if (uploadType === 'tamizaje') {
+        response = await uploadTamizajeExcel(selectedFiles)
+      } else {
+        response = await uploadExcel(selectedFiles)
+      }
       notify.success(response.data.mensaje || 'Archivos procesados correctamente.')
       setSelectedFiles([])
       setPage(1)
@@ -119,9 +127,35 @@ export default function UploadPage() {
     <div className="space-y-8">
       {/* ── Drag & Drop Upload Zone ───────────────────────────── */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
-        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-          Cargar Nuevos Resultados (Excel)
-        </h3>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+            {uploadType === 'resultados' ? 'Cargar Nuevos Resultados (Excel)' : 'Cargar Datos de Tamizaje'}
+          </h3>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setUploadType('resultados')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                uploadType === 'resultados' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4" />
+                Resultados
+              </div>
+            </button>
+            <button
+              onClick={() => setUploadType('tamizaje')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                uploadType === 'tamizaje' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Tamizaje
+              </div>
+            </button>
+          </div>
+        </div>
 
         <div
           onDragEnter={handleDrag}
