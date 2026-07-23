@@ -59,6 +59,11 @@ services:
       # - N8N_ENCRYPTION_KEY=n8n-encryption-key-change-this-in-prod
       - WEBHOOK_URL=${N8N_PUBLIC_URL:-http://localhost:5678}
       - N8N_SECURE_COOKIE=false
+      - N8N_RESTRICT_FILE_ACCESS_TO=/home/node/.n8n-files;/data/pdfs;/data/cola_envio
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_DEFAULT_BINARY_DATA_MODE=default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - n8n_data:/home/node/.n8n
       - cola_envio:/data/cola_envio

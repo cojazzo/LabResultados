@@ -213,3 +213,4 @@ async def actualizar_cuestionario(id: int, payload: PacienteCuestionarioUpdate, 
     await db.refresh(paciente)
     
     return paciente
+print("HOLA ESTOY AQUI")

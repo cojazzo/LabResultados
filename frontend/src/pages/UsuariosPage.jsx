@@ -100,7 +100,20 @@ export default function UsuariosPage() {
       setShowModal(false)
       fetchUsuarios()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error al guardar el usuario')
+      console.error('Error guardando usuario:', err)
+      const detail = err.response?.data?.detail
+      if (typeof detail === 'string') {
+        setError(detail)
+      } else if (Array.isArray(detail)) {
+        const msgs = detail.map((d) => {
+          if (d.field) return `${d.field}: ${d.msg}`
+          if (d.msg) return d.msg
+          return JSON.stringify(d)
+        }).join('. ')
+        setError(msgs || 'Error de validación en los campos del usuario')
+      } else {
+        setError(err.message || 'Error al guardar el usuario')
+      }
     } finally {
       setSaving(false)
     }

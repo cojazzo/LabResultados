@@ -806,6 +806,9 @@ export default function ResultadosPage() {
                     <button
                       onClick={() => {
                         setActiveReporteId(reporteId)
+                        if (!destinatarioEmail && previewVisita?.paciente?.email) {
+                          setDestinatarioEmail(previewVisita.paciente.email)
+                        }
                         setEmailModalOpen(true)
                       }}
                       className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
@@ -816,6 +819,9 @@ export default function ResultadosPage() {
                     <button
                       onClick={() => {
                         setActiveReporteId(reporteId)
+                        if (!destinatarioWhatsapp && previewVisita?.paciente?.whatsapp) {
+                          setDestinatarioWhatsapp(previewVisita.paciente.whatsapp)
+                        }
                         setWhatsappModalOpen(true)
                       }}
                       className="px-5 py-2 bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
@@ -858,13 +864,24 @@ export default function ResultadosPage() {
       >
         <form onSubmit={handleEnviarEmail} className="space-y-4">
           <p className="text-sm text-slate-500">
-            El PDF ha sido generado exitosamente. Ingresa el correo electrónico del paciente para enviarlo de inmediato.
+            El PDF ha sido generado exitosamente. Confirma o ingresa el correo electrónico para enviarlo de inmediato.
           </p>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-              Correo Electrónico
-            </label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Correo Electrónico
+              </label>
+              {previewVisita?.paciente?.email ? (
+                <span className="text-[11px] text-teal-600 font-semibold bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">
+                  Cargado del perfil del paciente
+                </span>
+              ) : (
+                <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                  Sin correo en perfil (Ingresa uno)
+                </span>
+              )}
+            </div>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                 <Mail className="w-5 h-5" />
@@ -874,7 +891,7 @@ export default function ResultadosPage() {
                 value={destinatarioEmail}
                 onChange={(e) => setDestinatarioEmail(e.target.value)}
                 placeholder="paciente@ejemplo.com"
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 transition"
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 transition text-sm"
                 required
               />
             </div>

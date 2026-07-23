@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, and_, String, func
 from sqlalchemy.orm import selectinload
@@ -424,3 +424,35 @@ async def trigger_outlook_envio(
         )
         
     return {"status": "ok", "message": "Enviado exitosamente a n8n para Outlook"}
+
+@router.post("/send-email-proxy")
+async def send_email_proxy(request: Request):
+    """
+    Proxy interno para n8n -> EWS. 
+    Evita los bugs de SSRF/DNS de n8n al conectarse a otros contenedores.
+    """
+    body = await request.body()
+    headers = {
+        "Content-Type": request.headers.get("Content-Type", "application/json"),
+        "x-api-key": request.headers.get("x-api-key", "")
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # En docker-compose, ews está en ews.lab:8765
+            response = await client.post(
+                "http://ews.lab:8765/send-email",
+                content=body,
+                headers=headers,
+                timeout=30.0
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en proxy a EWS: {str(e)}"
+        )

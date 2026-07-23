@@ -1,0 +1,245 @@
+{
+  "name": "LAB-01 Recepción Cuestionario",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "cuestionario-renal",
+        "formTitle": "Información adicional de la prueba renal",
+        "formDescription": "Formulario para determinación de función renal y estadísticas",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombre",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Apellido Paterno",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Apellido Materno",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Sexo",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Masculino"
+                  },
+                  {
+                    "option": "Femenino"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Teléfono de contacto",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Correo Electrónico"
+            },
+            {
+              "fieldLabel": "Fecha de nacimiento",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Edad",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Estado de Origen",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "CURP",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Domicilio",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Código Postal",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Estado de residencia",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Municipio de residencia",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Peso",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Estatura",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Derechohabiencia",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "IMSS"
+                  },
+                  {
+                    "option": "INSABI"
+                  },
+                  {
+                    "option": "ISSSTE"
+                  },
+                  {
+                    "option": "Otro"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Suplementos",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Tipo de agua que consume",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Agua de la llave"
+                  },
+                  {
+                    "option": "Agua rellenada"
+                  },
+                  {
+                    "option": "Agua de marca reconocida"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "¿Cocina con agua de la llave?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Sí"
+                  },
+                  {
+                    "option": "No"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Padecimientos",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Hipertensión"
+                  },
+                  {
+                    "option": "Diabetes"
+                  },
+                  {
+                    "option": "Obesidad"
+                  },
+                  {
+                    "option": "Familiar con enfermedad renal"
+                  },
+                  {
+                    "option": "Enfermedad del corazón"
+                  },
+                  {
+                    "option": "Ninguno"
+                  },
+                  {
+                    "option": "Quiste Renal"
+                  },
+                  {
+                    "option": "Infecciones urinarias de repetición"
+                  },
+                  {
+                    "option": "Otro"
+                  }
+                ]
+              },
+              "multiselect": true,
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "node-form-trigger",
+      "name": "FormTrigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        112,
+        304
+      ],
+      "webhookId": "38eb7595-c32a-448b-974a-59366fb04fb5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/pacientes/cuestionario",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"curp\": $json.CURP,\n  \"nombre\": $json.Nombre,\n  \"apellido_paterno\": $json[\"Apellido Paterno\"],\n  \"apellido_materno\": $json[\"Apellido Materno\"] || null,\n  \"sexo\": $json.Sexo,\n  \"telefono\": $json[\"Teléfono de contacto\"],\n  \"email\": $json[\"Correo Electrónico\"] || null,\n  \"fecha_nacimiento\": $json[\"Fecha de nacimiento\"],\n  \"edad\": $json.Edad,\n  \"estado_origen\": $json[\"Estado de Origen\"],\n  \"domicilio\": $json.Domicilio,\n  \"codigo_postal\": $json[\"Código Postal\"],\n  \"estado_residencia\": $json[\"Estado de residencia\"],\n  \"municipio_residencia\": $json[\"Municipio de residencia\"],\n  \"peso\": $json.Peso,\n  \"estatura\": $json.Estatura,\n  \"derechohabiencia\": $json.Derechohabiencia,\n  \"toma_suplemento\": $json.Suplementos,\n  \"tipo_agua\": $json[\"Tipo de agua que consume\"],\n  \"cocina_agua_llave\": $json[\"¿Cocina con agua de la llave?\"],\n  \"padecimientos\": $json.Padecimientos\n} }}",
+        "options": {}
+      },
+      "id": "node-http-request",
+      "name": "Registrar Cuestionario API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        352,
+        304
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "FormTrigger": {
+      "main": [
+        [
+          {
+            "node": "Registrar Cuestionario API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "23ac7a80-1b0a-4c18-af7f-62f047d46935",
+  "meta": {
+    "instanceId": "507e6e74dae42f911f205d3f28c4edc3661049071d74234b2cc9520faf0a44a4"
+  },
+  "nodeGroups": [],
+  "id": "uGd1ajcxy2Lw3J8Y",
+  "tags": []
+}
