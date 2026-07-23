@@ -30,11 +30,9 @@ async def lifespan(app: FastAPI):
     os.makedirs("./storage/emails", exist_ok=True)
     os.makedirs("./storage/whatsapp", exist_ok=True)
     
-    # 2. Crear tablas de base de datos si es SQLite (desarrollo local rápido)
-    # Para producción, se usarían migraciones Alembic
-    if settings.DATABASE_URL.startswith("sqlite"):
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    # 2. Crear tablas de base de datos si no existen
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
             
     # 3. Insertar usuario administrador por defecto si no existe
     from sqlalchemy.ext.asyncio import AsyncSession
