@@ -4,15 +4,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: lab_user
-      POSTGRES_PASSWORD: lab_password_2026
-      POSTGRES_DB: lab_resultados
+      POSTGRES_USER: ${POSTGRES_USER:-lab_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-lab_resultados}
     ports:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lab_user -d lab_resultados"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lab_user} -d ${POSTGRES_DB:-lab_resultados}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,18 +24,18 @@ services:
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://lab_user:lab_password_2026@db:5432/lab_resultados
-      - SECRET_KEY=production-secret-key-change-this
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=480
-      - LAB_NAME=Laboratorio Clínico
-      - LAB_ADDRESS=Av. Gómez Morín S/N Col. la Estación C.P. 20180, Aguascalientes, Ags. Fideicomiso complejo Tres Centurias (a un costado del CHMH)
-      - LAB_PHONE=449 459 57 97
-      - LAB_EMAIL=inaer.resultados@aguascalientes.gob.mx
-      - MOCK_EMAIL=true
-      - MOCK_WHATSAPP=true
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-lab_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lab_resultados}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - LAB_NAME=${LAB_NAME:-Laboratorio Clínico}
+      - LAB_ADDRESS=${LAB_ADDRESS:-Av. Gómez Morín S/N Col. la Estación C.P. 20180, Aguascalientes, Ags. Fideicomiso complejo Tres Centurias (a un costado del CHMH)}
+      - LAB_PHONE=${LAB_PHONE:-449 459 57 97}
+      - LAB_EMAIL=${LAB_EMAIL:-inaer.resultados@aguascalientes.gob.mx}
+      - MOCK_EMAIL=${MOCK_EMAIL:-true}
+      - MOCK_WHATSAPP=${MOCK_WHATSAPP:-true}
       - PDF_STORAGE_PATH=/app/storage/pdfs
-      - BASE_URL=http://localhost:8000
+      - BASE_URL=${BACKEND_BASE_URL:-http://localhost:8000}
     volumes:
       - pdf_storage:/app/storage
     depends_on:
@@ -56,7 +56,6 @@ services:
     ports:
       - "${N8N_PORT:-5678}:5678"
     environment:
-      # - N8N_ENCRYPTION_KEY=n8n-encryption-key-change-this-in-prod
       - WEBHOOK_URL=${N8N_PUBLIC_URL:-http://localhost:5678}
       - N8N_SECURE_COOKIE=false
       - N8N_RESTRICT_FILE_ACCESS_TO=/home/node/.n8n-files;/data/pdfs;/data/cola_envio
@@ -78,6 +77,7 @@ services:
     restart: unless-stopped
     depends_on:
       - n8n
+
   ews:
     build:
       context: ./backend/email_service
@@ -85,7 +85,7 @@ services:
     env_file:
       - ./backend/email_service/.env
     environment:
-      - EWS_USERNAME=${EWS_USERNAME:-gobags\inaer.resultados}
+      - EWS_USERNAME=${EWS_USERNAME}
       - EWS_PASSWORD=${EWS_PASSWORD}
       - EWS_API_KEY=${EWS_API_KEY}
       - EWS_URL=${EWS_URL}
@@ -97,14 +97,17 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: postgres_data_local
   pdf_storage:
+    external: true
+    name: pdf_storage_local
   cola_envio:
     driver: local
     driver_opts:
       type: cifs
-      o: "username=INAER,password=INAER2026,domain=WORKGROUP,vers=3.0"
-      device: "//192.168.1.95/outbox"
+      o: "username=${CIFS_USER},password=${CIFS_PASSWORD},domain=${CIFS_DOMAIN:-WORKGROUP},vers=${CIFS_VERS:-3.0}"
+      device: "${CIFS_DEVICE}"
   n8n_data:
     external: true
     name: n8n_data_local
-

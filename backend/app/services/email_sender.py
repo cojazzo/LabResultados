@@ -78,6 +78,11 @@ async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_emai
     paciente = reporte.paciente
     paciente_nombre = f"{paciente.nombre} {paciente.apellido}"
 
+    if destinatario_email and paciente:
+        if not paciente.email or paciente.email != destinatario_email:
+            paciente.email = destinatario_email
+            db.add(paciente)
+
     resultado_ids = [rr.resultado_id for rr in reporte.reporte_resultados] if reporte.reporte_resultados else [reporte.id]
 
     # 2. Registrar el envío en estado "pendiente"

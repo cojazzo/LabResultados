@@ -79,7 +79,11 @@ async def enviar_email(
     Envía un reporte PDF por correo electrónico de forma asíncrona.
     """
     # Validar que existe el reporte
-    stmt = select(ReporteGenerado).where(ReporteGenerado.id == req.reporte_id)
+    stmt = (
+        select(ReporteGenerado)
+        .where(ReporteGenerado.id == req.reporte_id)
+        .options(selectinload(ReporteGenerado.paciente))
+    )
     result = await db.execute(stmt)
     reporte = result.scalar_one_or_none()
     if not reporte:
@@ -87,6 +91,12 @@ async def enviar_email(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Reporte con ID {req.reporte_id} no encontrado"
         )
+
+    # Actualizar correo del paciente si cambió o estaba vacío
+    if req.destinatario_email and reporte.paciente:
+        if not reporte.paciente.email or reporte.paciente.email != req.destinatario_email:
+            reporte.paciente.email = req.destinatario_email
+            db.add(reporte.paciente)
 
     # Creamos un Envio en estado pendiente para retornar de inmediato
     envio = Envio(
@@ -132,7 +142,11 @@ async def enviar_whatsapp(
     Envía un reporte PDF por WhatsApp de forma asíncrona.
     """
     # Validar que existe el reporte
-    stmt = select(ReporteGenerado).where(ReporteGenerado.id == req.reporte_id)
+    stmt = (
+        select(ReporteGenerado)
+        .where(ReporteGenerado.id == req.reporte_id)
+        .options(selectinload(ReporteGenerado.paciente))
+    )
     result = await db.execute(stmt)
     reporte = result.scalar_one_or_none()
     if not reporte:
@@ -140,6 +154,13 @@ async def enviar_whatsapp(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Reporte con ID {req.reporte_id} no encontrado"
         )
+
+    # Actualizar whatsapp del paciente si cambió o estaba vacío
+    if req.destinatario_whatsapp and reporte.paciente:
+        clean_num = "".join(c for c in req.destinatario_whatsapp if c.isdigit() or c == '+')
+        if clean_num and (not reporte.paciente.whatsapp or reporte.paciente.whatsapp != clean_num):
+            reporte.paciente.whatsapp = clean_num
+            db.add(reporte.paciente)
 
     # Creamos un Envio en estado pendiente para retornar de inmediato
     envio = Envio(

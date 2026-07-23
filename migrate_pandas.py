@@ -1,10 +1,15 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
-import traceback
+import os
 
 def main():
     engine_sqlite = create_engine("sqlite:///backend/lab_resultados.db")
-    engine_pg = create_engine("postgresql+psycopg2://lab_user:lab_password_2026@localhost:5433/lab_resultados")
+    
+    pg_user = os.getenv("POSTGRES_USER", "lab_user")
+    pg_pass = os.getenv("POSTGRES_PASSWORD", "lab_password_2026")
+    pg_db = os.getenv("POSTGRES_DB", "lab_resultados")
+    pg_port = os.getenv("DB_PORT", "5433")
+    engine_pg = create_engine(f"postgresql+psycopg2://{pg_user}:{pg_pass}@localhost:{pg_port}/{pg_db}")
 
     # skip medicos as it's dropped in SQLite
     tables = [

@@ -3,6 +3,8 @@ import sqlite3
 import asyncpg
 import decimal
 
+import os
+
 async def main():
     # Connect to SQLite
     sqlite_conn = sqlite3.connect("backend/lab_resultados.db")
@@ -10,8 +12,11 @@ async def main():
     cursor = sqlite_conn.cursor()
 
     # Connect to Postgres
-    # Use 5433 which is the mapped port on the host
-    pg_conn = await asyncpg.connect("postgresql://lab_user:lab_password_2026@localhost:5433/lab_resultados")
+    pg_user = os.getenv("POSTGRES_USER", "lab_user")
+    pg_pass = os.getenv("POSTGRES_PASSWORD", "lab_password_2026")
+    pg_db = os.getenv("POSTGRES_DB", "lab_resultados")
+    pg_port = os.getenv("DB_PORT", "5433")
+    pg_conn = await asyncpg.connect(f"postgresql://{pg_user}:{pg_pass}@localhost:{pg_port}/{pg_db}")
 
     # Order is important for foreign keys
     tables = [
