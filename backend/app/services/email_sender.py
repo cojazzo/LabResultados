@@ -62,11 +62,14 @@ async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_emai
     Envía el PDF de un reporte por correo electrónico.
     Soporta modo Mock guardando el correo como archivo local.
     """
-    # 1. Buscar el reporte con relación al paciente y lote
+    # 1. Buscar el reporte con relación al paciente y sus resultados
     reporte_res = await db.execute(
         select(ReporteGenerado)
         .where(ReporteGenerado.id == reporte_id)
-        .options(selectinload(ReporteGenerado.paciente))
+        .options(
+            selectinload(ReporteGenerado.paciente),
+            selectinload(ReporteGenerado.reporte_resultados)
+        )
     )
     reporte = reporte_res.scalar_one_or_none()
     if not reporte:
@@ -74,6 +77,8 @@ async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_emai
 
     paciente = reporte.paciente
     paciente_nombre = f"{paciente.nombre} {paciente.apellido}"
+
+    resultado_ids = [rr.resultado_id for rr in reporte.reporte_resultados] if reporte.reporte_resultados else [reporte.id]
 
     # 2. Registrar el envío en estado "pendiente"
     envio = Envio(
@@ -93,6 +98,7 @@ async def send_report_email(db: AsyncSession, reporte_id: int, destinatario_emai
     pdf_url = f"{settings.BASE_URL}/storage/pdfs/{reporte.folio}.pdf"
 
     payload = {
+        "resultado_ids": resultado_ids,
         "reporte_id": reporte.id,
         "folio": reporte.folio,
         "paciente_nombre": paciente_nombre,
