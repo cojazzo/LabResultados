@@ -99,11 +99,7 @@ services:
 
 volumes:
   postgres_data:
-    external: true
-    name: postgres_data_local
   pdf_storage:
-    external: true
-    name: pdf_storage_local
   n8n_data:
     external: true
     name: n8n_data_local
