@@ -56,7 +56,11 @@ def parse_date(date_val) -> date | None:
     ]
     for fmt in formats:
         try:
-            return datetime.strptime(date_str, fmt).date()
+            parsed_date = datetime.strptime(date_str, fmt).date()
+            # If the 2-digit year logic puts the date in the future (e.g., '55' -> 2055), correct it to the 1900s
+            if parsed_date.year > datetime.now().year:
+                parsed_date = parsed_date.replace(year=parsed_date.year - 100)
+            return parsed_date
         except ValueError:
             continue
     return None
