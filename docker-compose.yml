@@ -11,6 +11,7 @@ services:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lab_user} -d ${POSTGRES_DB:-lab_resultados}"]
       interval: 10s
@@ -38,6 +39,7 @@ services:
       - BASE_URL=${BACKEND_BASE_URL:-http://localhost:8000}
     volumes:
       - pdf_storage:/app/storage
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -48,6 +50,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${FRONTEND_PORT:-3001}:80"
+    restart: unless-stopped
     depends_on:
       - backend
 
