@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   db:
@@ -93,13 +92,13 @@ services:
       - EWS_URL=${EWS_URL}
     volumes:
       - /data/pdfs:/app/data/pdfs
-    networks:
-      - default
     restart: unless-stopped
 
 volumes:
   postgres_data:
   pdf_storage:
+    external: true
+    name: pdf_storage_local
   n8n_data:
     external: true
     name: n8n_data_local

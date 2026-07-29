@@ -82,6 +82,15 @@ export const getReportes = (page = 1) =>
 export const descargarReporte = (id) =>
   client.get(`/reportes/${id}/descargar`, { responseType: 'blob' })
 
+export const exportarReporteExcel = (fechaInicio, fechaFin, campos, pruebaIds) => {
+  const params = {}
+  if (fechaInicio) params.fecha_inicio = fechaInicio
+  if (fechaFin) params.fecha_fin = fechaFin
+  if (campos && campos.length > 0) params.campos = campos.join(',')
+  if (pruebaIds && pruebaIds.length > 0) params.prueba_ids = pruebaIds.join(',')
+  return client.get('/reportes/exportar-excel', { params, responseType: 'blob' })
+}
+
 // ── Envíos ────────────────────────────────────────────────────────
 export const enviarEmail = (data) =>
   client.post('/envios/email', data)

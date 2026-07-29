@@ -38,8 +38,10 @@ const resolveSex = (paciente) => {
 };
 
 // Helper para TFG
-const calculateEgfr = (scr, age, isFemale) => {
-  if (age < 25) {
+const calculateEgfr = (scr, age, isFemale, heightCm = null) => {
+  if (age < 18 && heightCm && heightCm > 0) {
+    return 0.413 * heightCm / scr;
+  } else if (age < 25) {
     const calcAge = Math.max(age, 2.0);
     const lnQ = isFemale 
       ? 3.080 + 0.177 * calcAge - 0.223 * Math.log(calcAge) - 0.00596 * (calcAge ** 2) + 0.0000686 * (calcAge ** 3)
@@ -120,7 +122,11 @@ const groupResultadosIntoVisitas = (items) => {
           age--;
         }
       }
-      egfr = calculateEgfr(crts, age, isFemale);
+      let heightCm = null;
+      if (v.paciente.estatura) {
+        heightCm = parseFloat(v.paciente.estatura);
+      }
+      egfr = calculateEgfr(crts, age, isFemale, heightCm);
     }
 
     if (egfr !== null && acr !== null) {

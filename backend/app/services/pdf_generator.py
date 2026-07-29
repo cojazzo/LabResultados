@@ -44,12 +44,15 @@ def resolve_sex(paciente) -> bool:
             return False
     return False
 
-def calculate_egfr(scr: float, age: float, is_female: bool) -> tuple[float, str]:
+def calculate_egfr(scr: float, age: float, is_female: bool, height_cm: float | None = None) -> tuple[float, str]:
     """
-    Calcula la TFG (eGFR) utilizando la fórmula adecuada según la edad.
+    Calcula la TFG (eGFR) utilizando la fórmula adecuada según la edad y la estatura.
     Retorna (egfr, formula_name).
     """
-    if age < 25:
+    if age < 18 and height_cm is not None and height_cm > 0:
+        egfr = 0.413 * float(height_cm) / scr
+        return egfr, "Schwartz (Pediátrica)"
+    elif age < 25:
         calc_age = max(age, 2.0)
         if is_female:
             ln_q = 3.080 + 0.177 * calc_age - 0.223 * math.log(calc_age) - 0.00596 * (calc_age ** 2) + 0.0000686 * (calc_age ** 3)
@@ -346,7 +349,8 @@ def generate_reportlab_pdf(pdf_path, context):
     egfr = None
     formula_name = "N/A"
     if crts is not None:
-        egfr, formula_name = calculate_egfr(crts, age, is_female)
+        height_cm = float(paciente.estatura) if paciente.estatura is not None else None
+        egfr, formula_name = calculate_egfr(crts, age, is_female, height_cm)
         
     # SECCIÓN 1: EVALUACIÓN DE FUNCIÓN GLOMERULAR (TFG)
     if crts is not None:

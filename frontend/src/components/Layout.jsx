@@ -14,6 +14,7 @@ import {
   User,
   Users,
   ChevronRight,
+  FileDown,
 } from 'lucide-react'
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/envios', label: 'Envíos', icon: Send },
   { to: '/catalogo', label: 'Catálogo', icon: BookOpen },
   { to: '/perfiles', label: 'Perfiles', icon: Users },
+  { to: '/reportes-excel', label: 'Reportes Excel', icon: FileDown },
   { to: '/quimicos', label: 'Químicos', icon: Users, reqAdmin: true },
   { to: '/usuarios', label: 'Usuarios', icon: User, reqAdmin: true },
 ]
@@ -34,6 +36,7 @@ const pageTitles = {
   '/envios': 'Historial de Envíos',
   '/catalogo': 'Catálogo de Pruebas',
   '/perfiles': 'Perfiles de Pacientes',
+  '/reportes-excel': 'Reportes Excel',
   '/quimicos': 'Químicos Validadores',
   '/usuarios': 'Gestión de Usuarios',
 }
