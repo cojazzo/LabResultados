@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from typing import Optional
 import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./lab_resultados.db"
-    SECRET_KEY: str = "your-secret-key-change-this-in-production"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
-    SYSTEM_API_KEY: str = "sys_98f6d3b4a2e1c5798a7b6c5d4e3f2a1b"
+    SYSTEM_API_KEY: str
 
     # Configuración del Laboratorio
     LAB_NAME: str = "Laboratorio Clínico"
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
 
     # Email (SMTP)
     MAIL_USERNAME: str = "your-email@example.com"
-    MAIL_PASSWORD: str = "your-app-password"
+    MAIL_PASSWORD: Optional[str] = None
     MAIL_FROM: str = "resultados@labsanrafael.com"
     MAIL_PORT: int = 587
     MAIL_SERVER: str = "smtp.example.com"
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     N8N_WEBHOOK_URL: str = "http://n8n:5678/webhook/enviar-resultados"
     N8N_WEBHOOK_SECRET: str = "n8n-webhook-secret-key-change-this"
     N8N_OUTLOOK_WEBHOOK_URL: str = "http://n8n:5678/webhook/enviar-resultados"
-    N8N_OUTLOOK_WEBHOOK_SECRET: str = "wh_a7f938b2c4e6d5a1f09e8d7c6b5a4f3e"
+    N8N_OUTLOOK_WEBHOOK_SECRET: str
 
     # Twilio (WhatsApp) - DEPRECATED en backend (se mueve a n8n)
     TWILIO_ACCOUNT_SID: str = "your-twilio-sid"

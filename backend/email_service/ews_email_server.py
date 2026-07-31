@@ -29,15 +29,27 @@ except ImportError as e:
     logger.error(f"exchangelib no instalado: {e}")
     logger.error("Instala con: pip3 install exchangelib --break-system-packages")
 
-# Variables de entorno
-EWS_USERNAME = os.getenv('EWS_USERNAME', 'gobags\\inaer.resultados')
-EWS_PASSWORD = os.getenv('EWS_PASSWORD', '')
-EWS_EMAIL = os.getenv('EWS_EMAIL', 'inaer.resultados@aguascalientes.gob.mx')
-EWS_URL = os.getenv('EWS_URL', 'https://autodiscover.aguascalientes.gob.mx/EWS/Exchange.asmx')
-API_KEY = os.getenv('EWS_API_KEY', 'change-me-in-production')
+# Variables de entorno — obligatorias, sin defaults
+EWS_USERNAME = os.getenv('EWS_USERNAME')
+EWS_PASSWORD = os.getenv('EWS_PASSWORD')
+EWS_EMAIL = os.getenv('EWS_EMAIL')
+EWS_URL = os.getenv('EWS_URL')
+API_KEY = os.getenv('EWS_API_KEY')
 
-if not EWS_PASSWORD:
-    logger.warning("⚠️  EWS_PASSWORD no configurada - verifica tu archivo .env o configuración del servicio")
+# Validación al arranque: fallar rápido si falta variable obligatoria
+_missing = [k for k, v in {
+    'EWS_USERNAME': EWS_USERNAME,
+    'EWS_PASSWORD': EWS_PASSWORD,
+    'EWS_EMAIL': EWS_EMAIL,
+    'EWS_URL': EWS_URL,
+    'EWS_API_KEY': API_KEY,
+}.items() if not v]
+
+if _missing:
+    _vars = ', '.join(_missing)
+    logger.critical(f"🚨 Variables de entorno obligatorias no configuradas: {_vars}")
+    logger.critical("El servicio EWS no puede arrancar sin estas variables. Revisa tu .env")
+    raise SystemExit(1)
 
 # Modelos Pydantic
 class Attachment(BaseModel):

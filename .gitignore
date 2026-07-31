@@ -21,6 +21,7 @@ ENV/
 .env.local
 .env.*.local
 .env.n8n-mcp
+backend/email_service/.env
 
 # ========================
 # Node.js / Frontend
@@ -55,6 +56,25 @@ lab_resultados.db
 # ========================
 postgres_data/
 pdf_storage/
+
+# Docker override (configuración local no versionada)
+docker-compose.override.yml
+
+# ========================
+# Backups / Dumps / Archivos sensibles
+# ========================
+*.dump
+*.sql
+*.tar.gz
+*.tar.bz2
+*.bak
+*.bak.*
+*.backup
+
+# ========================
+# Cola de envío CIFS (eliminada el 30-jul-2026)
+# ========================
+cola_envio/
 
 # ========================
 # Testing / Coverage

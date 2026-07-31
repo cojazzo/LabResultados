@@ -47,17 +47,23 @@ async def lifespan(app: FastAPI):
             admin_user = result.scalar_one_or_none()
             
             if not admin_user:
+                admin_password = os.getenv("ADMIN_DEFAULT_PASSWORD")
+                if not admin_password:
+                    raise RuntimeError(
+                        "ADMIN_DEFAULT_PASSWORD no está configurada. "
+                        "Define esta variable en tu .env antes de arrancar el backend."
+                    )
                 new_admin = User(
                     username="admin",
                     email="admin@labsanrafael.com",
-                    hashed_password=get_password_hash("admin123"),
+                    hashed_password=get_password_hash(admin_password),
                     nombre_completo="Administrador General",
                     rol="admin",
                     is_active=True,
                     is_superuser=True
                 )
                 session.add(new_admin)
-                print("✅ Usuario admin creado por defecto (admin / admin123)")
+                print("✅ Usuario admin creado con la contraseña de ADMIN_DEFAULT_PASSWORD")
     yield
     # Shutdown actions
     await engine.dispose()
