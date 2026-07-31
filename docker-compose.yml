@@ -90,8 +90,6 @@ services:
       - EWS_PASSWORD=${EWS_PASSWORD}
       - EWS_API_KEY=${EWS_API_KEY}
       - EWS_URL=${EWS_URL}
-    volumes:
-      - /data/pdfs:/app/data/pdfs
     restart: unless-stopped
 
 volumes:
