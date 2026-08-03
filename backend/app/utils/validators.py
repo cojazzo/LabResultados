@@ -32,10 +32,17 @@ def validate_phone(phone: str) -> bool:
 
 def parse_date(date_val) -> date | None:
     """Parsea fechas en múltiples formatos."""
-    if isinstance(date_val, date):
-        return date_val
     if isinstance(date_val, datetime):
-        return date_val.date()
+        d = date_val.date()
+        # Corregir años futuros de 2 dígitos interpretados por pandas (ej. 1990 → 2090)
+        if d.year > datetime.now().year:
+            d = d.replace(year=d.year - 100)
+        return d
+    if isinstance(date_val, date):
+        # Corregir años futuros de 2 dígitos interpretados por pandas (ej. 1990 → 2090)
+        if date_val.year > datetime.now().year:
+            date_val = date_val.replace(year=date_val.year - 100)
+        return date_val
     if not isinstance(date_val, str):
         return None
     
