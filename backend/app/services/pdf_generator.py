@@ -295,6 +295,9 @@ def generate_reportlab_pdf(pdf_path, context):
     if dob:
         if hasattr(dob, "date"):
             dob = dob.date()
+        # Corregir años futuros mal guardados en DB (ej. 2090 en lugar de 1990)
+        if dob.year > datetime.now().year:
+            dob = dob.replace(year=dob.year - 100)
         age = ft_date.year - dob.year - ((ft_date.month, ft_date.day) < (dob.month, dob.day))
     else:
         age = 45
