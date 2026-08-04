@@ -91,7 +91,11 @@ export const exportarReporteExcel = (fechaInicio, fechaFin, campos, pruebaIds) =
   return client.get('/reportes/exportar-excel', { params, responseType: 'blob' })
 }
 
+export const descargarTemplateExcel = () =>
+  client.get('/upload/template-excel', { responseType: 'blob' })
+
 // ── Envíos ────────────────────────────────────────────────────────
+
 export const enviarEmail = (data) =>
   client.post('/envios/email', data)
 

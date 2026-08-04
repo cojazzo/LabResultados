@@ -10,8 +10,9 @@ import {
   ClipboardCheck,
   ChevronDown,
   ChevronUp,
+  Download,
 } from 'lucide-react'
-import { exportarReporteExcel, getPruebas } from '../api/client.js'
+import { exportarReporteExcel, getPruebas, descargarTemplateExcel } from '../api/client.js'
 
 // Columnas de tamizaje disponibles (mismo orden que el backend)
 const TAMIZAJE_COLS = [
@@ -115,6 +116,8 @@ export default function ReportesExcelPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+
+  const [loadingTemplate, setLoadingTemplate] = useState(false)
 
   // Cargar catálogo de pruebas al montar
   useEffect(() => {
@@ -393,7 +396,7 @@ export default function ReportesExcelPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             id="btn-exportar-excel"
             type="button"
@@ -419,6 +422,47 @@ export default function ReportesExcelPage() {
                 Generar y Descargar Excel
               </>
             )}
+          </button>
+
+          {/* Botón de template */}
+          <button
+            id="btn-descargar-template"
+            type="button"
+            onClick={async () => {
+              setLoadingTemplate(true)
+              try {
+                const res = await descargarTemplateExcel()
+                const url = URL.createObjectURL(new Blob([res.data], {
+                  type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                }))
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'Template_Laboratorio.xlsx'
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                URL.revokeObjectURL(url)
+              } catch {
+                // silencioso
+              } finally {
+                setLoadingTemplate(false)
+              }
+            }}
+            disabled={loadingTemplate}
+            className="
+              flex items-center gap-2 px-4 py-3 rounded-xl
+              border border-slate-200 bg-white hover:bg-slate-50
+              text-slate-600 text-sm font-medium
+              transition-all duration-200
+              disabled:opacity-50 disabled:cursor-not-allowed
+            "
+          >
+            {loadingTemplate ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Descargar Template
           </button>
 
           {!loading && (

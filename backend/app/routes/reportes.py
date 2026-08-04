@@ -19,7 +19,7 @@ from app.services.pdf_generator import generate_report_pdf, generate_batch_repor
 router = APIRouter(prefix="/reportes", tags=["Reportes PDF"])
 
 
-# Mapa: nombre de columna visible → (atributo del modelo | "imc" para calculado)
+# Mapa: nombre de columna visible → atributo del modelo (None = calculado)
 TAMIZAJE_FIELD_MAP: dict[str, str | None] = {
     "CURP":                     "identificacion",
     "Nombre":                   "nombre",
@@ -29,7 +29,7 @@ TAMIZAJE_FIELD_MAP: dict[str, str | None] = {
     "Fecha Nacimiento":         "fecha_nacimiento",
     "Peso (kg)":                "peso",
     "Estatura (cm)":            "estatura",
-    "IMC":                      None,          # calculado
+    "IMC":                      None,
     "Derechohabiencia":         "derechohabiencia",
     "Padecimientos":            "padecimientos",
     "Tipo de Agua":             "tipo_agua",
@@ -37,6 +37,35 @@ TAMIZAJE_FIELD_MAP: dict[str, str | None] = {
 }
 
 ALL_TAMIZAJE_COLS = list(TAMIZAJE_FIELD_MAP.keys())
+
+
+def _build_excel_stream(df: pd.DataFrame, sheet_name: str = "Reporte") -> io.BytesIO:
+    """Genera un BytesIO con el DataFrame como Excel, ajustando anchos de columna."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+        ws = writer.sheets[sheet_name]
+        for col_cells in ws.columns:
+            max_len = max(
+                (len(str(cell.value)) if cell.value is not None else 0)
+                for cell in col_cells
+            )
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 50)
+    output.seek(0)
+    return output
+
+
+def _build_filename(fecha_inicio: Optional[date], fecha_fin: Optional[date]) -> str:
+    """Construye el nombre del archivo Excel incluyendo la fecha de generación."""
+    from datetime import date as date_today
+    hoy = date_today.today().isoformat()  # YYYY-MM-DD
+    if fecha_inicio and fecha_fin:
+        return f"Reporte_{fecha_inicio}_a_{fecha_fin}_generado_{hoy}.xlsx"
+    elif fecha_inicio:
+        return f"Reporte_desde_{fecha_inicio}_generado_{hoy}.xlsx"
+    elif fecha_fin:
+        return f"Reporte_hasta_{fecha_fin}_generado_{hoy}.xlsx"
+    return f"Reporte_Completo_{hoy}.xlsx"
 
 
 @router.get("/exportar-excel")
@@ -49,61 +78,53 @@ async def exportar_excel(
     ),
     prueba_ids: Optional[str] = Query(
         None,
-        description="IDs de pruebas de laboratorio a incluir, separados por coma. Si se omite, se incluyen todas.",
+        description="IDs de pruebas a incluir, separados por coma. Si se omite, se incluyen todas.",
     ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+    current_user: User = Depends(get_current_user)):
     """
-    Genera y descarga un Excel con una fila por paciente.
-    Columnas fijas: datos de tamizaje (filtrables con 'campos').
-    Columnas dinámicas: valores de laboratorio agrupados por Toma 1, Toma 2, ...
-    Filtrable por rango de fecha de toma de muestra y por pruebas seleccionadas.
+    Genera y descarga un Excel con UNA FILA POR VISITA (paciente + fecha).
+    Los parámetros de laboratorio son columnas directas: Creatinina (mg/dL), ACR (mg/g), ...
+    Si un paciente tuvo 3 visitas, aparece en 3 filas separadas.
+    Columnas tamizaje (izquierda) + Fecha Visita + columnas de pruebas (derecha).
     """
+    from collections import defaultdict
 
-    # Resolver columnas de tamizaje seleccionadas
+    # ── Resolver selecciones del usuario ──────────────────────────────────
     if campos:
         selected_tamizaje = [c.strip() for c in campos.split(",") if c.strip() in TAMIZAJE_FIELD_MAP]
     else:
         selected_tamizaje = ALL_TAMIZAJE_COLS
 
-    # Resolver IDs de pruebas seleccionadas
     selected_prueba_ids: set[int] | None = None
     if prueba_ids:
         try:
             selected_prueba_ids = {int(pid.strip()) for pid in prueba_ids.split(",") if pid.strip()}
         except ValueError:
-            raise HTTPException(status_code=400, detail="prueba_ids debe ser una lista de enteros separados por coma")
+            raise HTTPException(status_code=400, detail="prueba_ids debe contener enteros separados por coma")
 
-    # 1. Obtener resultados en el rango de fechas, cargando relaciones
+    # ── 1. Obtener resultados filtrados ───────────────────────────────────
     stmt = (
         select(Resultado)
         .options(
             selectinload(Resultado.paciente),
             selectinload(Resultado.prueba),
         )
-        .order_by(Resultado.paciente_id, Resultado.fecha_toma)
+        .order_by(Resultado.paciente_id, Resultado.fecha_toma, Resultado.prueba_id)
     )
     if fecha_inicio:
         stmt = stmt.where(Resultado.fecha_toma >= fecha_inicio)
     if fecha_fin:
         stmt = stmt.where(Resultado.fecha_toma <= fecha_fin)
+    if selected_prueba_ids:
+        stmt = stmt.where(Resultado.prueba_id.in_(selected_prueba_ids))
 
     res = await db.execute(stmt)
     resultados = res.scalars().all()
 
     if not resultados:
-        # Devolver Excel vacío con encabezados de tamizaje solamente
-        df_empty = pd.DataFrame(columns=[
-            "CURP", "Nombre", "Apellido Paterno", "Apellido Materno",
-            "Sexo", "Fecha Nacimiento", "Peso (kg)", "Estatura (cm)", "IMC",
-            "Derechohabiencia", "Padecimientos", "Tipo de Agua",
-            "Cocina con Agua de Llave",
-        ])
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_empty.to_excel(writer, index=False, sheet_name="Reporte")
-        output.seek(0)
+        df_empty = pd.DataFrame(columns=selected_tamizaje + ["Fecha Visita"])
+        output = _build_excel_stream(df_empty)
         filename = _build_filename(fecha_inicio, fecha_fin)
         return StreamingResponse(
             output,
@@ -111,119 +132,76 @@ async def exportar_excel(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # 2. Recopilar todos los IDs de pacientes involucrados para traer datos de tamizaje
+    # ── 2. Mapa de pacientes ───────────────────────────────────────────────
     paciente_ids = list({r.paciente_id for r in resultados})
     stmt_pac = select(Paciente).where(Paciente.id.in_(paciente_ids))
     res_pac = await db.execute(stmt_pac)
     pacientes_map: dict[int, Paciente] = {p.id: p for p in res_pac.scalars().all()}
 
-    # 3. Recopilar todas las pruebas en orden para columnas consistentes
-    prueba_cols: list[str] = []
-    seen_pruebas: set[str] = set()
-    for r in sorted(resultados, key=lambda x: (x.paciente_id, x.fecha_toma, x.prueba.nombre)):
-        key = f"{r.prueba.nombre} ({r.prueba.unidad})"
-        if key not in seen_pruebas:
-            seen_pruebas.add(key)
-            prueba_cols.append(key)
+    # ── 3. Columnas de pruebas en orden consistente (alfabético por nombre) ──
+    prueba_cols_ordered: list[str] = []
+    seen: set[str] = set()
+    for r in sorted(resultados, key=lambda x: x.prueba.nombre):
+        label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
+        if label not in seen:
+            seen.add(label)
+            prueba_cols_ordered.append(label)
 
-    # 4. Agrupar resultados por paciente y asignar número de toma
-    from collections import defaultdict
-    pac_resultados: dict[int, list[Resultado]] = defaultdict(list)
+    # ── 4. Agrupar resultados por (paciente_id, fecha_toma) ──────────────
+    visitas: dict[tuple, dict] = defaultdict(dict)
     for r in resultados:
-        pac_resultados[r.paciente_id].append(r)
+        label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
+        val = float(r.valor) if r.valor is not None else (r.valor_texto or "")
+        visitas[(r.paciente_id, r.fecha_toma)][label] = val
 
-    max_tomas = 0
-    # Estructura: { paciente_id: { toma_num: { prueba_col: valor, 'fecha': fecha } } }
-    pac_tomas: dict[int, dict[int, dict]] = {}
-    for pac_id, res_list in pac_resultados.items():
-        # Fechas únicas ordenadas → cada fecha es una toma
-        fechas_unicas = sorted({r.fecha_toma for r in res_list})
-        tomas: dict[int, dict] = {}
-        for idx, fecha in enumerate(fechas_unicas, start=1):
-            toma_data: dict = {"fecha": fecha}
-            for r in res_list:
-                if r.fecha_toma == fecha:
-                    col = f"{r.prueba.nombre} ({r.prueba.unidad})"
-                    toma_data[col] = float(r.valor) if r.valor is not None else (r.valor_texto or "")
-            tomas[idx] = toma_data
-        pac_tomas[pac_id] = tomas
-        if len(fechas_unicas) > max_tomas:
-            max_tomas = len(fechas_unicas)
-
-    # 5. Construir filas del DataFrame
+    # ── 5. Construir filas: una por (paciente, fecha_visita) ─────────────
     rows = []
-    for pac_id in paciente_ids:
+    for (pac_id, fecha_toma) in sorted(visitas.keys(), key=lambda k: (k[0], k[1])):
         paciente = pacientes_map.get(pac_id)
         if not paciente:
             continue
 
-        # Calcular IMC
         try:
-            peso = float(paciente.peso) if paciente.peso else None
-            estatura_m = float(paciente.estatura) / 100 if paciente.estatura else None
-            imc = round(peso / (estatura_m ** 2), 2) if peso and estatura_m else None
+            peso_f = float(paciente.peso) if paciente.peso else None
+            est_m = float(paciente.estatura) / 100 if paciente.estatura else None
+            imc = round(peso_f / (est_m ** 2), 2) if peso_f and est_m else None
         except Exception:
             imc = None
 
-        row: dict = {
-            "CURP": paciente.identificacion,
-            "Nombre": paciente.nombre,
-            "Apellido Paterno": paciente.apellido,
-            "Apellido Materno": paciente.apellido_materno or "",
-            "Sexo": paciente.sexo or "",
-            "Fecha Nacimiento": str(paciente.fecha_nacimiento) if paciente.fecha_nacimiento else "",
-            "Peso (kg)": float(paciente.peso) if paciente.peso else "",
-            "Estatura (cm)": float(paciente.estatura) if paciente.estatura else "",
-            "IMC": imc if imc is not None else "",
-            "Derechohabiencia": paciente.derechohabiencia or "",
-            "Padecimientos": paciente.padecimientos or "",
-            "Tipo de Agua": paciente.tipo_agua or "",
+        all_tamizaje: dict = {
+            "CURP":                     paciente.identificacion,
+            "Nombre":                   paciente.nombre,
+            "Apellido Paterno":         paciente.apellido,
+            "Apellido Materno":         paciente.apellido_materno or "",
+            "Sexo":                     paciente.sexo or "",
+            "Fecha Nacimiento":         str(paciente.fecha_nacimiento) if paciente.fecha_nacimiento else "",
+            "Peso (kg)":                float(paciente.peso) if paciente.peso else "",
+            "Estatura (cm)":            float(paciente.estatura) if paciente.estatura else "",
+            "IMC":                      imc if imc is not None else "",
+            "Derechohabiencia":         paciente.derechohabiencia or "",
+            "Padecimientos":            paciente.padecimientos or "",
+            "Tipo de Agua":             paciente.tipo_agua or "",
             "Cocina con Agua de Llave": paciente.cocina_agua_llave or "",
         }
 
-        # Agregar columnas de cada toma
-        tomas = pac_tomas.get(pac_id, {})
-        for toma_num in range(1, max_tomas + 1):
-            toma_data = tomas.get(toma_num, {})
-            row[f"Toma {toma_num} — Fecha"] = str(toma_data.get("fecha", "")) if toma_data.get("fecha") else ""
-            for col in prueba_cols:
-                row[f"Toma {toma_num} — {col}"] = toma_data.get(col, "")
+        row: dict = {col: all_tamizaje[col] for col in selected_tamizaje}
+        row["Fecha Visita"] = str(fecha_toma)
+
+        visita_vals = visitas[(pac_id, fecha_toma)]
+        for col in prueba_cols_ordered:
+            row[col] = visita_vals.get(col, "")
 
         rows.append(row)
 
-    # 6. Crear DataFrame y generar Excel
+    # ── 6. Generar Excel en memoria ───────────────────────────────────────
     df = pd.DataFrame(rows)
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Reporte")
-        # Ajustar ancho de columnas automáticamente
-        ws = writer.sheets["Reporte"]
-        for col_cells in ws.columns:
-            max_len = max(
-                (len(str(cell.value)) if cell.value is not None else 0)
-                for cell in col_cells
-            )
-            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 50)
-
-    output.seek(0)
+    output = _build_excel_stream(df)
     filename = _build_filename(fecha_inicio, fecha_fin)
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-def _build_filename(fecha_inicio: Optional[date], fecha_fin: Optional[date]) -> str:
-    """Construye el nombre del archivo Excel con el rango de fechas."""
-    if fecha_inicio and fecha_fin:
-        return f"Reporte_{fecha_inicio}_{fecha_fin}.xlsx"
-    elif fecha_inicio:
-        return f"Reporte_desde_{fecha_inicio}.xlsx"
-    elif fecha_fin:
-        return f"Reporte_hasta_{fecha_fin}.xlsx"
-    return "Reporte_Completo.xlsx"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

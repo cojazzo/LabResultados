@@ -1,9 +1,12 @@
+import io
 import json
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from app.database import get_db
-from app.models import Lote, User
+from app.models import Lote, Prueba, User
 from app.core.security import get_current_user
 from app.services.excel_parser import process_excel_file, process_tamizaje_excel
 from pydantic import BaseModel
@@ -190,6 +193,79 @@ async def get_lotes(
             )
         )
     return response_items
+
+
+@router.get("/template-excel")
+async def descargar_template_excel(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Descarga un archivo Excel template (.xlsx) con los encabezados correctos
+    para que el laboratorio llene y suba los resultados.
+    Formato horizontal: una fila por visita, con columnas de metadatos del paciente
+    y una columna por cada prueba activa en el catálogo.
+    """
+    # Cargar pruebas activas del catálogo para generar las columnas dinámicas
+    pruebas_res = await db.execute(
+        select(Prueba).where(Prueba.activa == True).order_by(Prueba.nombre)
+    )
+    pruebas = pruebas_res.scalars().all()
+
+    # Columnas fijas de metadatos (igual al formato horizontal que ya acepta el parser)
+    meta_cols = [
+        "Fecha",          # fecha de toma de muestra (requerido)
+        "NTS",            # CURP del paciente (requerido)
+        "Nombre del Paciente",
+        "Apellidos",
+        "Sexo del Paciente",
+        "Fecha Nacimiento",
+        "Numero",         # número de petición (opcional)
+    ]
+
+    # Columnas de pruebas: una por cada prueba activa (nombre en mayúsculas = código)
+    prueba_cols = [p.codigo for p in pruebas] if pruebas else ["CRTS", "CRE01", "ALBOR", "ACR"]
+
+    all_cols = meta_cols + prueba_cols
+
+    # Crear DataFrame vacío con 3 filas de ejemplo comentadas (como guía)
+    example_rows = [
+        {
+            "Fecha": "2024-01-15",
+            "NTS": "CURP18 caracteres aqui",
+            "Nombre del Paciente": "JUAN",
+            "Apellidos": "PÉREZ GARCÍA",
+            "Sexo del Paciente": "M",
+            "Fecha Nacimiento": "1985-03-20",
+            "Numero": "12345",
+            **{p.codigo: "" for p in pruebas} if pruebas else {"CRTS": "", "CRE01": "", "ALBOR": "", "ACR": ""},
+        }
+    ]
+    # Eliminar la fila de ejemplo para que el archivo llegue limpio
+    df = pd.DataFrame(columns=all_cols)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Resultados Lab")
+        ws = writer.sheets["Resultados Lab"]
+        # Ajustar anchos de columna
+        for col_cells in ws.columns:
+            header_val = str(col_cells[0].value) if col_cells[0].value else ""
+            ws.column_dimensions[col_cells[0].column_letter].width = max(len(header_val) + 4, 12)
+        # Congelar la primera fila de encabezados
+        ws.freeze_panes = "A2"
+    output.seek(0)
+
+    from datetime import date as date_today
+    hoy = date_today.today().isoformat()
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="Template_Laboratorio_{hoy}.xlsx"'},
+    )
+
+
 
 @router.get("/lotes/{lote_id}", response_model=LoteResponse)
 async def get_lote(
