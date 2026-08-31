@@ -34,6 +34,7 @@ class CuestionarioClinicoInput(BaseModel):
 
 class PacienteCuestionarioUpdate(BaseModel):
     identificacion: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
     email: Optional[str] = None
     telefono: Optional[str] = None
     whatsapp: Optional[str] = None
@@ -189,6 +190,8 @@ async def actualizar_cuestionario(id: int, payload: PacienteCuestionarioUpdate, 
         
     if payload.identificacion is not None:
         paciente.identificacion = payload.identificacion.strip().upper()
+    if payload.fecha_nacimiento is not None:
+        paciente.fecha_nacimiento = payload.fecha_nacimiento
     if payload.email is not None:
         paciente.email = payload.email.strip() if payload.email.strip() else None
     if payload.telefono is not None:

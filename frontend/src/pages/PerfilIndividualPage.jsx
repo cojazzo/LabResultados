@@ -80,6 +80,7 @@ export default function PerfilIndividualPage() {
   const handleEditClick = () => {
     setEditFormData({
       identificacion: paciente.identificacion || '',
+      fecha_nacimiento: paciente.fecha_nacimiento || '',
       email: paciente.email || '',
       telefono: paciente.telefono || paciente.whatsapp || '',
       peso: paciente.peso || '',
@@ -102,6 +103,7 @@ export default function PerfilIndividualPage() {
       setSaving(true)
       const payload = {
         identificacion: editFormData.identificacion || null,
+        fecha_nacimiento: editFormData.fecha_nacimiento || null,
         email: editFormData.email || null,
         telefono: editFormData.telefono || null,
         whatsapp: editFormData.telefono || null,
@@ -204,6 +206,14 @@ export default function PerfilIndividualPage() {
                   </>
                 ) : (
                   <input type="text" name="telefono" value={editFormData.telefono} onChange={handleEditChange} placeholder="Teléfono" className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                {!isEditingCuestionario ? (
+                  <span>{paciente.fecha_nacimiento ? new Date(paciente.fecha_nacimiento + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Sin fecha de nacimiento'}</span>
+                ) : (
+                  <input type="date" name="fecha_nacimiento" value={editFormData.fecha_nacimiento} onChange={handleEditChange} className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
                 )}
               </div>
             </div>
