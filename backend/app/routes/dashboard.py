@@ -301,7 +301,7 @@ async def geocodificar_pacientes(
     """
     from app.services.geocoding import geocode_batch
 
-    # Obtener pacientes de Aguascalientes sin geocodificar
+    # Obtener pacientes de Aguascalientes sin geocodificar, en lotes de 60 para no dar Timeout
     stmt = select(Paciente).where(
         and_(
             Paciente.lat.is_(None),
@@ -310,7 +310,7 @@ async def geocodificar_pacientes(
                 Paciente.municipio_residencia.ilike("%aguascalientes%"),
             )
         )
-    )
+    ).limit(60)
     result = await db.execute(stmt)
     pacientes = result.scalars().all()
 
