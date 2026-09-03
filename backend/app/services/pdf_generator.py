@@ -328,12 +328,14 @@ def generate_reportlab_pdf(pdf_path, context):
     elements.append(info_table)
     elements.append(Spacer(1, 2))
     
-    # Extraer valores de resultados
+    # Extraer valores de resultados y su fuente (vitros / tira_uc1000)
     crts = None
     cre01 = None
     albor = None
     acr = None
-    
+    fuente_cre01 = None
+    fuente_albor = None
+
     for r in context['resultados']:
         code = r.prueba.codigo.upper()
         val = float(r.valor) if r.valor is not None else None
@@ -341,10 +343,21 @@ def generate_reportlab_pdf(pdf_path, context):
             crts = val
         elif code == "CRE01":
             cre01 = val
+            fuente_cre01 = r.fuente or "vitros"
         elif code == "ALBOR":
             albor = val
+            fuente_albor = r.fuente or "vitros"
         elif code == "ACR":
             acr = val
+
+    # Descripciones del método según el instrumento que generó el resultado
+    DESC_ALBOR_VITROS = "Inmunoturbidimetría automatizada (Vitros)"
+    DESC_ALBOR_TIRA   = "Fotometría de reflectancia con cámara CMOS utilizando tiras reactivas específicas"
+    DESC_CRE01_VITROS = "Técnica enzimática colorimétrica por velocidad de 2 puntos (Vitros)"
+    DESC_CRE01_TIRA   = "Fotometría de reflectancia con cámara CMOS utilizando tiras reactivas específicas"
+
+    desc_albor = DESC_ALBOR_TIRA if fuente_albor == "tira_uc1000" else DESC_ALBOR_VITROS
+    desc_cre01 = DESC_CRE01_TIRA if fuente_cre01 == "tira_uc1000" else DESC_CRE01_VITROS
             
     if acr is None and albor is not None and cre01 is not None and cre01 > 0:
         acr = (albor / cre01) * 100
@@ -426,7 +439,7 @@ def generate_reportlab_pdf(pdf_path, context):
         Paragraph(albor_str, cell_bold if albor is not None else cell_style),
         Paragraph("mg/L", cell_style),
         Paragraph("&lt; 20.0", cell_style),
-        Paragraph("Inmunoturbidimetría automatizada", cell_style)
+        Paragraph(desc_albor, cell_style)
     ])
     
     cre01_str = f"{cre01:.1f}" if cre01 is not None else "No solicitado"
@@ -435,7 +448,7 @@ def generate_reportlab_pdf(pdf_path, context):
         Paragraph(cre01_str, cell_bold if cre01 is not None else cell_style),
         Paragraph("mg/dL", cell_style),
         Paragraph("39.0 - 259.0", cell_style),
-        Paragraph("Técnica enzimática colorimétrica por velocidad de 2 puntos", cell_style)
+        Paragraph(desc_cre01, cell_style)
     ])
     
     if acr is not None:
