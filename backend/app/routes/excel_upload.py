@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import Lote, Prueba, User
 from app.core.security import get_current_user
 from app.services.excel_parser import process_excel_file, process_tamizaje_excel
+from app.services.uc1000_parser import process_uc1000_csv
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -89,6 +90,86 @@ async def upload_excel(
         "lotes": lotes_procesados,
         "mensaje": f"Se procesaron {len(lotes_procesados)} archivo(s) exitosamente."
     }
+
+
+@router.post("/uc1000", response_model=UploadResponse)
+async def upload_uc1000(
+    files: List[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sube uno o varios archivos CSV del analizador de tiras reactivas UC-1000.
+    Los valores de albúmina y creatinina de tira se cargan con fuente='tira_uc1000'.
+    Si ya existe un valor de Vitros para la misma prueba/paciente/fecha, no se sobreescribe.
+    El ACR se calcula automáticamente respetando la jerarquía Vitros > Tira.
+    """
+    lotes_procesados = []
+
+    for file in files:
+        # Aceptar .csv y opcionalmente .txt
+        if not (file.filename.lower().endswith(".csv") or file.filename.lower().endswith(".txt")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El archivo '{file.filename}' debe ser un CSV (.csv) del UC-1000."
+            )
+
+        file_content = await file.read()
+
+        # Verificación rápida: primera línea debe contener 'UC-1000'
+        try:
+            first_line = file_content[:100].decode("utf-8", errors="replace")
+            if "UC-1000" not in first_line:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El archivo '{file.filename}' no parece ser un CSV del UC-1000 "
+                           "(no se encontró 'UC-1000' en la primera línea)."
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Si no se puede leer, el parser reportará el error
+
+        try:
+            lote = await process_uc1000_csv(
+                db=db,
+                file_content=file_content,
+                filename=file.filename,
+                usuario_id=current_user.id
+            )
+
+            log_err = None
+            if lote.log_errores:
+                try:
+                    log_err = json.loads(lote.log_errores)
+                except Exception:
+                    log_err = [{"error": lote.log_errores}]
+
+            lotes_procesados.append(
+                LoteResponse(
+                    id=lote.id,
+                    nombre=lote.nombre,
+                    fecha_carga=lote.fecha_carga,
+                    estado=lote.estado,
+                    total_registros=lote.total_registros,
+                    registros_exitosos=lote.registros_exitosos,
+                    registros_error=lote.registros_error,
+                    log_errores=log_err
+                )
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error procesando el archivo UC-1000 '{file.filename}': {str(e)}"
+            )
+
+    return {
+        "lotes": lotes_procesados,
+        "mensaje": f"Se procesaron {len(lotes_procesados)} archivo(s) UC-1000 exitosamente."
+    }
+
 
 @router.post("/tamizaje", response_model=UploadResponse)
 async def upload_tamizaje(
@@ -229,6 +310,7 @@ async def descargar_template_excel(
     all_cols = meta_cols + prueba_cols
 
     # Crear DataFrame vacío con 3 filas de ejemplo comentadas (como guía)
+    prueba_cols_ejemplo = {p.codigo: "" for p in pruebas} if pruebas else {"CRTS": "", "CRE01": "", "ALBOR": "", "ACR": ""}
     example_rows = [
         {
             "Fecha": "2024-01-15",
@@ -238,7 +320,7 @@ async def descargar_template_excel(
             "Sexo del Paciente": "M",
             "Fecha Nacimiento": "1985-03-20",
             "Numero": "12345",
-            **{p.codigo: "" for p in pruebas} if pruebas else {"CRTS": "", "CRE01": "", "ALBOR": "", "ACR": ""},
+            **prueba_cols_ejemplo,
         }
     ]
     # Eliminar la fila de ejemplo para que el archivo llegue limpio

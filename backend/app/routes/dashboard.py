@@ -183,72 +183,106 @@ async def get_dashboard_top_pruebas(
 
 # ── Mapa de Pacientes ─────────────────────────────────────────────────────────
 
-class MapaPuntoResponse(BaseModel):
-    lat: float
-    lon: float
-    colonia: Optional[str] = None
-    total: int
+class MapaHexbinResponse(BaseModel):
+    tamizados: List[dict]
+    positivos: List[dict]
 
 class GeocodeResultResponse(BaseModel):
     geocodificados: int
     fallidos: int
     sin_geocodificar_restantes: int
 
-
-@router.get("/mapa-pacientes", response_model=List[MapaPuntoResponse])
-async def get_mapa_pacientes(
+@router.get("/mapa-hexbin", response_model=MapaHexbinResponse)
+async def get_mapa_hexbin(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retorna los puntos geocodificados de pacientes en Aguascalientes
-    para graficar en el mapa del dashboard.
-
-    Solo incluye pacientes con lat/lon ya calculados.
-    Los puntos se agrupan por coordenada redondeada (colonia aprox.)
-    para preservar privacidad y reducir carga en el frontend.
+    Retorna los puntos geocodificados de pacientes en Aguascalientes,
+    separados en 'tamizados' (todos) y 'positivos' (TFG < 60 o ACR > 30).
     """
-    # Filtrar pacientes de Aguascalientes con coordenadas
-    stmt = select(Paciente).where(
-        and_(
-            Paciente.lat.isnot(None),
-            Paciente.lon.isnot(None),
-            or_(
-                Paciente.estado_residencia.ilike("%aguascalientes%"),
-                Paciente.municipio_residencia.ilike("%aguascalientes%"),
+    from sqlalchemy.orm import selectinload
+    
+    # Traer pacientes geocodificados de AGS con sus resultados
+    stmt = (
+        select(Paciente)
+        .options(selectinload(Paciente.resultados).selectinload(Resultado.prueba))
+        .where(
+            and_(
+                Paciente.lat.isnot(None),
+                Paciente.lon.isnot(None),
+                or_(
+                    Paciente.estado_residencia.ilike("%aguascalientes%"),
+                    Paciente.municipio_residencia.ilike("%aguascalientes%"),
+                )
             )
         )
     )
     result = await db.execute(stmt)
-    pacientes = result.scalars().all()
+    pacientes = result.scalars().unique().all()
 
-    if not pacientes:
-        return []
+    tamizados = []
+    positivos = []
 
-    # Agrupar por coordenada redondeada a 3 decimales (~110m de precisión)
-    # para no exponer ubicaciones exactas por nombre
-    clusters: dict = {}
     for p in pacientes:
-        # Extraer colonia del domicilio (primera parte antes de la coma, si la hay)
-        colonia = None
-        if p.domicilio:
-            partes = p.domicilio.split(",")
-            colonia = partes[0].strip()[:60] if partes else None
+        if not p.lat or not p.lon:
+            continue
+            
+        pt = {"lat": float(p.lat), "lon": float(p.lon)}
+        tamizados.append(pt)
+        
+        # Evaluar positividad
+        is_positive = False
+        
+        # Edad en años
+        edad = None
+        if p.fecha_nacimiento:
+            hoy = date.today()
+            edad = hoy.year - p.fecha_nacimiento.year - ((hoy.month, hoy.day) < (p.fecha_nacimiento.month, p.fecha_nacimiento.day))
+            
+        for r in p.resultados:
+            if not r.valor:
+                continue
+                
+            val = float(r.valor)
+            codigo = r.prueba.codigo.upper()
+            
+            # Condición 1: ACR > 30
+            if codigo == "ACR" and val > 30:
+                is_positive = True
+                break
+                
+            # Condición 2: eGFR < 60 (evaluada a partir de Creatinina Sérica)
+            if codigo == "CRTS" and edad is not None:
+                egfr = None
+                is_female = (p.sexo == "F")
+                
+                if edad < 18:
+                    # Schwartz 2009 bedside
+                    # asumiendo p.estatura en cm
+                    if p.estatura:
+                        egfr = (0.413 * float(p.estatura)) / val
+                else:
+                    # CKD-EPI 2021
+                    k = 0.7 if is_female else 0.9
+                    a = -0.241 if is_female else -0.302
+                    
+                    scr_k = val / k
+                    min_val = scr_k if scr_k < 1 else 1
+                    max_val = scr_k if scr_k > 1 else 1
+                    
+                    egfr = 142 * (min_val ** a) * (max_val ** -1.200) * (0.9938 ** edad)
+                    if is_female:
+                        egfr *= 1.012
+                        
+                if egfr is not None and egfr < 60:
+                    is_positive = True
+                    break
+                    
+        if is_positive:
+            positivos.append(pt)
 
-        key = (round(float(p.lat), 3), round(float(p.lon), 3))
-        if key not in clusters:
-            clusters[key] = {"lat": key[0], "lon": key[1], "colonia": colonia, "total": 0}
-        clusters[key]["total"] += 1
-
-    return [
-        MapaPuntoResponse(
-            lat=v["lat"],
-            lon=v["lon"],
-            colonia=v["colonia"],
-            total=v["total"],
-        )
-        for v in clusters.values()
-    ]
+    return MapaHexbinResponse(tamizados=tamizados, positivos=positivos)
 
 
 @router.post("/geocodificar", response_model=GeocodeResultResponse)

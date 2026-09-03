@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { uploadExcel, uploadTamizajeExcel, getLotes, generarMasivo } from '../api/client.js'
+import { uploadExcel, uploadTamizajeExcel, uploadUC1000, getLotes, generarMasivo } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
-import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send, Users } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send, Users, Activity } from 'lucide-react'
 import Badge from '../components/Badge.jsx'
 import Modal from '../components/Modal.jsx'
 import Pagination from '../components/Pagination.jsx'
@@ -88,6 +88,8 @@ export default function UploadPage() {
       let response
       if (uploadType === 'tamizaje') {
         response = await uploadTamizajeExcel(selectedFiles)
+      } else if (uploadType === 'uc1000') {
+        response = await uploadUC1000(selectedFiles)
       } else {
         response = await uploadExcel(selectedFiles)
       }
@@ -97,7 +99,7 @@ export default function UploadPage() {
       fetchHistory()
     } catch (err) {
       console.error(err)
-      notify.error(err.response?.data?.detail || 'Error al procesar el archivo Excel.')
+      notify.error(err.response?.data?.detail || 'Error al procesar el archivo.')
     } finally {
       setUploading(false)
     }
@@ -129,7 +131,9 @@ export default function UploadPage() {
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-            {uploadType === 'resultados' ? 'Cargar Nuevos Resultados (Excel)' : 'Cargar Datos de Tamizaje'}
+            {uploadType === 'resultados' ? 'Cargar Nuevos Resultados (Excel)'
+              : uploadType === 'tamizaje' ? 'Cargar Datos de Tamizaje'
+              : 'Cargar Tira Reactiva UC-1000 (CSV)'}
           </h3>
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <button
@@ -154,8 +158,35 @@ export default function UploadPage() {
                 Tamizaje
               </div>
             </button>
+            <button
+              onClick={() => { setUploadType('uc1000'); setSelectedFiles([]) }}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                uploadType === 'uc1000' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                Tira UC-1000
+              </div>
+            </button>
           </div>
         </div>
+
+        {/* Aviso informativo del flujo mixto ACR */}
+        {uploadType === 'uc1000' && (
+          <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700">
+            <Info className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
+            <div>
+              <p className="font-semibold mb-1">Modelo mixto ACR — Flujo de 3 fases</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li><strong>Fase 1:</strong> Sube el CSV del UC-1000 (todos los pacientes). Se calculará el ACR con albúmina y creatinina de tira.</li>
+                <li><strong>Fase 2 (ACR &gt; 30):</strong> Sube el Excel de Vitros con creatinina urinaria. Sobreescribirá la creatinina de tira y recalculará el ACR.</li>
+                <li><strong>Fase 3 (ACR &gt; 30):</strong> Sube el Excel de Vitros con microalbúmina. Sobreescribirá la albúmina de tira para el ACR final.</li>
+              </ol>
+              <p className="mt-1.5 text-blue-500">Los valores de Vitros tienen prioridad sobre los de tira y nunca serán sobreescritos por una recarga de CSV.</p>
+            </div>
+          </div>
+        )}
 
         <div
           onDragEnter={handleDrag}
@@ -172,20 +203,24 @@ export default function UploadPage() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".xlsx, .xls"
+            accept={uploadType === 'uc1000' ? '.csv,.txt' : '.xlsx,.xls'}
             onChange={handleFileChange}
             className="hidden"
           />
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600">
-              <Upload className="w-6 h-6" />
+              {uploadType === 'uc1000' ? <Activity className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-700">
-                Arrastra archivos Excel aquí o haz clic para seleccionar
+                {uploadType === 'uc1000'
+                  ? 'Arrastra el CSV del UC-1000 aquí o haz clic para seleccionar'
+                  : 'Arrastra archivos Excel aquí o haz clic para seleccionar'}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Formatos soportados: .xlsx, .xls (Tamaño máximo: 10MB)
+                {uploadType === 'uc1000'
+                  ? 'Formato: .csv (exportación directa del UC-1000)'
+                  : 'Formatos soportados: .xlsx, .xls (Tamaño máximo: 10MB)'}
               </p>
             </div>
           </div>

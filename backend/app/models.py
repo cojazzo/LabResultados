@@ -121,6 +121,7 @@ class Resultado(Base):
     source_row_number = Column(Integer, nullable=True)
     validation_status = Column(String, default="pending") # pending, valid, error
     authorization_status = Column(String, default="pending") # pending, authorized
+    fuente = Column(String, default="vitros", nullable=True)  # tira_uc1000 | vitros
     # ---------------------------------------------------
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())

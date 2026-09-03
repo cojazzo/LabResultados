@@ -43,55 +43,74 @@ def _within_aguascalientes(lat: float, lon: float) -> bool:
 
 async def geocode_address(
     domicilio: Optional[str],
+    codigo_postal: Optional[str],
     municipio: Optional[str],
     estado: Optional[str],
 ) -> Tuple[Optional[float], Optional[float]]:
     """
-    Geocodifica una dirección usando Nominatim.
-
+    Geocodifica una dirección usando Nominatim con sistema de reintentos decrecientes.
     Retorna (lat, lon) si tiene éxito y las coordenadas están dentro de
     Aguascalientes. Retorna (None, None) en cualquier fallo.
     """
-    # Construir query: calle/colonia + municipio + estado + país
-    partes = [p for p in [domicilio, municipio, estado, "México"] if p]
-    if not partes:
-        return None, None
+    import re
+    queries_to_try = []
 
-    query = ", ".join(partes)
+    # 1. Dirección completa con CP (ideal)
+    if domicilio and codigo_postal:
+        queries_to_try.append(", ".join(p for p in [domicilio, codigo_postal, municipio, estado, "México"] if p))
+        
+    # 2. Dirección completa sin CP (por si el CP es erróneo)
+    if domicilio:
+        queries_to_try.append(", ".join(p for p in [domicilio, municipio, estado, "México"] if p))
+        
+        clean_dom = re.sub(r'#\s*', '', domicilio)
+        match = re.search(r'^([a-zA-ZñÑáéíóúÁÉÍÓÚ\s0-9\.oOaA]+\s\d+)', clean_dom)
+        if match:
+            clean_dom = match.group(1).strip()
+            
+        if clean_dom and clean_dom != domicilio:
+            if codigo_postal:
+                queries_to_try.append(", ".join(p for p in [clean_dom, codigo_postal, municipio, estado, "México"] if p))
+            queries_to_try.append(", ".join(p for p in [clean_dom, municipio, estado, "México"] if p))
 
-    params = {
-        "q": query,
-        "format": "json",
-        "limit": 1,
-        "countrycodes": "mx",
-        "bounded": 1,
-        "viewbox": f"{BBOX_LON_MIN},{BBOX_LAT_MAX},{BBOX_LON_MAX},{BBOX_LAT_MIN}",
-    }
+    # 3. Fallback al Código Postal (Si falla la calle, mapear a la colonia/CP)
+    if codigo_postal:
+        queries_to_try.append(", ".join(p for p in [codigo_postal, municipio, estado, "México"] if p))
+
+    # 4. Fallback al Municipio (aglomera, pero peor es nada)
+    queries_to_try.append(", ".join(p for p in [municipio, estado, "México"] if p))
 
     headers = {"User-Agent": USER_AGENT}
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(NOMINATIM_URL, params=params, headers=headers)
-            response.raise_for_status()
-            results = response.json()
+            for query in queries_to_try:
+                params = {
+                    "q": query,
+                    "format": "json",
+                    "limit": 1,
+                    "countrycodes": "mx",
+                    "bounded": 1,
+                    "viewbox": f"{BBOX_LON_MIN},{BBOX_LAT_MAX},{BBOX_LON_MAX},{BBOX_LAT_MIN}",
+                }
+                
+                response = await client.get(NOMINATIM_URL, params=params, headers=headers)
+                response.raise_for_status()
+                results = response.json()
 
-        if not results:
-            logger.debug("Nominatim: sin resultados para '%s'", query)
-            return None, None
+                if results:
+                    lat = float(results[0]["lat"])
+                    lon = float(results[0]["lon"])
 
-        lat = float(results[0]["lat"])
-        lon = float(results[0]["lon"])
+                    if _within_aguascalientes(lat, lon):
+                        logger.info("Geocodificado: '%s' → (%.6f, %.6f)", query, lat, lon)
+                        return lat, lon
+                
+                # Respetar rate limit de Nominatim antes de intentar con el siguiente fallback
+                await asyncio.sleep(NOMINATIM_RATE_LIMIT_SECONDS)
 
-        if not _within_aguascalientes(lat, lon):
-            logger.debug(
-                "Nominatim: resultado fuera de Aguascalientes para '%s' → (%s, %s)",
-                query, lat, lon,
-            )
-            return None, None
-
-        logger.info("Geocodificado: '%s' → (%.6f, %.6f)", query, lat, lon)
-        return lat, lon
+        logger.debug("Nominatim: agotados todos los intentos para '%s'", domicilio)
+        return None, None
 
     except httpx.HTTPError as exc:
         logger.warning("Nominatim HTTP error para '%s': %s", query, exc)
@@ -121,6 +140,7 @@ async def geocode_batch(
     for paciente in pacientes:
         lat, lon = await geocode_address(
             domicilio=paciente.domicilio,
+            codigo_postal=paciente.codigo_postal,
             municipio=paciente.municipio_residencia,
             estado=paciente.estado_residencia,
         )

@@ -51,6 +51,14 @@ export const uploadTamizajeExcel = (files) => {
   })
 }
 
+export const uploadUC1000 = (files) => {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  return client.post('/upload/uc1000', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 export const getLotes = (page = 1) =>
   client.get('/upload/lotes', { params: { page } })
 
@@ -121,8 +129,8 @@ export const getDashboardAnormales = () =>
 export const getDashboardTopPruebas = (limit = 10) =>
   client.get('/dashboard/top-pruebas', { params: { limit } })
 
-export const getDashboardMapaPacientes = () =>
-  client.get('/dashboard/mapa-pacientes')
+export const getDashboardMapaHexbin = () =>
+  client.get('/dashboard/mapa-hexbin')
 
 export const geocodificarPacientes = () =>
   client.post('/dashboard/geocodificar')

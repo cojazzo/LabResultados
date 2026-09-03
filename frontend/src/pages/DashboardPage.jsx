@@ -6,7 +6,7 @@ import {
   getDashboardTopPruebas,
   getResultados,
   descargarReporte,
-  getDashboardMapaPacientes,
+  getDashboardMapaHexbin,
   geocodificarPacientes,
 } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
@@ -40,7 +40,7 @@ import {
 import LoadingSkeleton from '../components/LoadingSkeleton.jsx'
 import StatCard from '../components/StatCard.jsx'
 import Badge from '../components/Badge.jsx'
-import MapaPacientes from '../components/MapaPacientes.jsx'
+import MapaHexbin from '../components/MapaHexbin.jsx'
 
 const COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#3b82f6']
 
@@ -52,7 +52,7 @@ export default function DashboardPage() {
   const [anormales, setAnormales] = useState([])
   const [topPruebas, setTopPruebas] = useState([])
   const [recientes, setRecientes] = useState([])
-  const [mapaPuntos, setMapaPuntos] = useState([])
+  const [mapaPuntos, setMapaPuntos] = useState({ tamizados: [], positivos: [] })
   const [loadingMapa, setLoadingMapa] = useState(true)
   const [geocodificando, setGeocodificando] = useState(false)
   
@@ -90,7 +90,7 @@ export default function DashboardPage() {
   const fetchMapa = useCallback(async () => {
     setLoadingMapa(true)
     try {
-      const res = await getDashboardMapaPacientes()
+      const res = await getDashboardMapaHexbin()
       setMapaPuntos(res.data)
     } catch (err) {
       console.error(err)
@@ -258,7 +258,7 @@ export default function DashboardPage() {
 
         {/* Contenedor del mapa */}
         <div className="h-[480px] relative">
-          <MapaPacientes puntos={mapaPuntos} loading={loadingMapa} />
+          <MapaHexbin data={mapaPuntos} loading={loadingMapa} />
         </div>
       </div>
 

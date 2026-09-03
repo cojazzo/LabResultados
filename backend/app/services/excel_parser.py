@@ -8,6 +8,8 @@ from sqlalchemy import select
 from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion
 from app.utils.curp_validator import match_patient_identifier
+# Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
+from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
 
 async def process_excel_file(db: AsyncSession, file_content: bytes, filename: str, usuario_id: int) -> Lote:
     """
@@ -231,7 +233,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
                 
         obs_val = " | ".join(obs_parts) if obs_parts else None
 
-        # PREVENCIÓN DE DUPLICADOS
+        # PREVENCIÓN DE DUPLICADOS — Vitros siempre sobreescribe (fuente="vitros")
         res_stmt = select(Resultado).where(
             Resultado.paciente_id == paciente.id,
             Resultado.prueba_id == prueba.id,
@@ -247,6 +249,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
             resultado.interpretacion = interpretacion
             resultado.fecha_resultado = fecha_res_val or fecha_toma_val
             resultado.observaciones = obs_val
+            resultado.fuente = "vitros"  # Vitros siempre sobreescribe
         else:
             resultado = Resultado(
                 lote_id=lote.id,
@@ -257,7 +260,8 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
                 interpretacion=interpretacion,
                 fecha_toma=fecha_toma_val,
                 fecha_resultado=fecha_res_val or fecha_toma_val,
-                observaciones=obs_val
+                observaciones=obs_val,
+                fuente="vitros",
             )
             db.add(resultado)
         exitosos += 1
@@ -457,13 +461,14 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             obs_val = f"Petición No. {numero_raw}" if numero_raw else None
 
             if resultado:
-                # Actualizar
+                # Actualizar — Vitros siempre sobreescribe
                 resultado.lote_id = lote.id
                 resultado.valor = Decimal(str(valor_num)) if valor_num is not None else None
                 resultado.valor_texto = valor_text
                 resultado.interpretacion = interpretacion
                 resultado.fecha_resultado = fecha_toma_val
                 resultado.observaciones = obs_val
+                resultado.fuente = "vitros"
             else:
                 # Crear nuevo
                 resultado = Resultado(
@@ -475,7 +480,8 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
                     interpretacion=interpretacion,
                     fecha_toma=fecha_toma_val,
                     fecha_resultado=fecha_toma_val,
-                    observaciones=obs_val
+                    observaciones=obs_val,
+                    fuente="vitros",
                 )
                 db.add(resultado)
             fila_exitosos += 1
@@ -511,69 +517,40 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
 
 async def calculate_missing_acr(db: AsyncSession, lote_id: int):
     """
-    Busca visitas en el lote que tengan ALBOR y CRE01 pero les falte ACR,
-    y calcula/crea el resultado de ACR de forma automática.
+    Busca visitas en el lote que tengan ALBOR y CRE01 y recalcula el ACR
+    respetando la jerarquía de fuentes (Vitros > Tira).
+    Delega en calculate_acr_for_patient del uc1000_parser.
     """
     stmt = select(Resultado).where(Resultado.lote_id == lote_id)
-    res = await db.execute(stmt)
+    res  = await db.execute(stmt)
     resultados = res.scalars().all()
-    
-    # Agrupar por visita
-    visitas = {}
+
+    # Agrupar visitas únicas (paciente + fecha)
+    visitas: set = set()
     for r in resultados:
-        # Cargar la relación prueba para acceder a su código
-        prueba_res = await db.execute(select(Prueba).where(Prueba.id == r.prueba_id))
-        prueba = prueba_res.scalar_one()
-        key = (r.paciente_id, r.fecha_toma)
-        if key not in visitas:
-            visitas[key] = {}
-        visitas[key][prueba.codigo.upper()] = r
-        
-    acr_prueba_res = await db.execute(select(Prueba).where(Prueba.codigo == "ACR"))
-    acr_prueba = acr_prueba_res.scalar_one_or_none()
-    if not acr_prueba:
-        acr_prueba = Prueba(
-            codigo="ACR",
-            nombre="Relación Albúmina/Creatinina",
-            categoria="Química Clínica",
-            unidad="mg/g",
-            activa=True
+        visitas.add((r.paciente_id, r.fecha_toma))
+
+    # Obtener/crear las pruebas necesarias (compartidas)
+    prueba_cache: dict = {}
+    prueba_alb = await _get_or_create_prueba(db, prueba_cache, "ALBOR",
+                                              "Albúmina Urinaria", "mg/L")
+    prueba_cre = await _get_or_create_prueba(db, prueba_cache, "CRE01",
+                                              "Creatinina Urinaria", "mg/dL")
+    prueba_acr = await _get_or_create_prueba(db, prueba_cache, "ACR",
+                                              "Relación Albúmina/Creatinina", "mg/g",
+                                              valor_max=30.0)
+
+    for (paciente_id, fecha_toma) in visitas:
+        await calculate_acr_for_patient(
+            db          = db,
+            paciente_id = paciente_id,
+            fecha_toma  = fecha_toma,
+            lote_id     = lote_id,
+            prueba_alb  = prueba_alb,
+            prueba_cre  = prueba_cre,
+            prueba_acr  = prueba_acr,
         )
-        db.add(acr_prueba)
-        await db.flush()
-        
-    for (paciente_id, fecha_toma), pruebas_map in visitas.items():
-        if "ALBOR" in pruebas_map and "CRE01" in pruebas_map and "ACR" not in pruebas_map:
-            albor_val = float(pruebas_map["ALBOR"].valor) if pruebas_map["ALBOR"].valor is not None else None
-            cre01_val = float(pruebas_map["CRE01"].valor) if pruebas_map["CRE01"].valor is not None else None
-            
-            if albor_val is not None and cre01_val is not None and cre01_val > 0:
-                acr_val = (albor_val / cre01_val) * 100
-                ref_res = pruebas_map["ALBOR"]
-                
-                existing_stmt = select(Resultado).where(
-                    Resultado.paciente_id == paciente_id,
-                    Resultado.prueba_id == acr_prueba.id,
-                    Resultado.fecha_toma == fecha_toma
-                )
-                existing_res = await db.execute(existing_stmt)
-                existing = existing_res.scalars().first()
-                
-                if existing:
-                    existing.valor = Decimal(str(round(acr_val, 2)))
-                    existing.lote_id = lote_id
-                else:
-                    new_acr = Resultado(
-                        lote_id=lote_id,
-                        paciente_id=paciente_id,
-                        prueba_id=acr_prueba.id,
-                        valor=Decimal(str(round(acr_val, 2))),
-                        interpretacion="normal",
-                        fecha_toma=fecha_toma,
-                        fecha_resultado=fecha_toma,
-                        observaciones="Calculado automáticamente (ALBOR/CRE01)"
-                    )
-                    db.add(new_acr)
+
     await db.flush()
 
 async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename: str, usuario_id: int) -> dict:
@@ -628,8 +605,8 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
         "edad": ["edad"],
         "estado_origen": ["estado_de_origen"],
         "curp": ["curp"],
-        "domicilio": ["domicilio_calle_numero_colonia"],
-        "codigo_postal": ["codigo_postal"],
+        "domicilio": ["domicilio_calle_numero_colonia", "domicilio"],
+        "codigo_postal": ["codigo_postal", "c_digo_postal"],
         "estado_residencia": ["estado_de_residencia"],
         "municipio": ["muncipio_de_residencia", "municipio_de_residencia"],
         "peso": ["peso"],
@@ -652,6 +629,9 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
             if found_col:
                 break
         resolved_meta[key] = found_col
+    
+    print(f"DEBUG EXCEL COLS: {cols}")
+    print(f"DEBUG RESOLVED META: {resolved_meta}")
 
     for index, row in df.iterrows():
         fila_num = index + 2
