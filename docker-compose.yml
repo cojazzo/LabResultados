@@ -35,7 +35,10 @@ services:
       - MOCK_EMAIL=${MOCK_EMAIL:-true}
       - MOCK_WHATSAPP=${MOCK_WHATSAPP:-true}
       - PDF_STORAGE_PATH=/app/storage/pdfs
-      - BASE_URL=${BACKEND_BASE_URL:-http://localhost:8000}
+      - BASE_URL=${BASE_URL:-}
+      - SYSTEM_API_KEY=${SYSTEM_API_KEY}
+      - N8N_OUTLOOK_WEBHOOK_SECRET=${N8N_OUTLOOK_WEBHOOK_SECRET}
+      - MAIL_PASSWORD=${BACKEND_BASE_URL:-http://localhost:8000}
     volumes:
       - pdf_storage:/app/storage
     restart: unless-stopped
