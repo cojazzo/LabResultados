@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     MOCK_EMAIL: bool = True
     MOCK_WHATSAPP: bool = True
 
+    # Geocodificación (mapa de pacientes)
+    #  - NOMINATIM_BASE_URL: instancia local de Nominatim (servicio del stack).
+    #  - GOOGLE_GEOCODING_API_KEY: fallback cuando Nominatim no resuelve a nivel
+    #    calle. Si es None, sólo se usa Nominatim.
+    NOMINATIM_BASE_URL: str = "http://nominatim:8080"
+    GOOGLE_GEOCODING_API_KEY: Optional[str] = None
+    GEOCODING_GOOGLE_SLEEP: float = 0.05
+    GEOCODING_CONCURRENCY: int = 5
+    GEOCODING_BATCH_SIZE: int = 80
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 @lru_cache

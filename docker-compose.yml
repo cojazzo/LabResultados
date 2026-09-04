@@ -39,12 +39,16 @@ services:
       - SYSTEM_API_KEY=${SYSTEM_API_KEY}
       - N8N_OUTLOOK_WEBHOOK_SECRET=${N8N_OUTLOOK_WEBHOOK_SECRET}
       - MAIL_PASSWORD=${BACKEND_BASE_URL:-http://localhost:8000}
+      - NOMINATIM_BASE_URL=${NOMINATIM_BASE_URL:-http://nominatim:8080}
+      - GOOGLE_GEOCODING_API_KEY=${GOOGLE_GEOCODING_API_KEY:-}
     volumes:
       - pdf_storage:/app/storage
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      nominatim:
+        condition: service_started
 
   frontend:
     build:
@@ -95,6 +99,32 @@ services:
       - EWS_EMAIL=${EWS_EMAIL}
     restart: unless-stopped
 
+  # Nominatim local (OpenStreetMap) para geocodificar direcciones sin depender
+  # de servicios públicos (que bloquean la IP en uso masivo). Datos cargados:
+  # Aguascalientes + buffer. La base ya está importada en el volumen; el
+  # contenedor sólo arranca PostgreSQL + API (no reimporta).
+  # Para reconstruir la base ver infra/nominatim/README.md.
+  nominatim:
+    image: mediagis/nominatim:4.5
+    environment:
+      NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:-nominatim_local_ags}
+      FREEZE: "true"
+      GUNICORN_WORKERS: "3"
+      # La base ya está importada (marcador import-finished en el volumen), así
+      # que el contenedor NO reimporta y este archivo nunca se lee. Pero el
+      # arranque exige que la variable esté definida.
+      PBF_PATH: /nominatim/data/aguascalientes.osm.pbf
+    volumes:
+      - nominatim_db:/var/lib/postgresql/16/main
+    shm_size: 512m
+    mem_limit: 2g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
   pdf_storage:
@@ -103,3 +133,8 @@ volumes:
   n8n_data:
     external: true
     name: n8n_data_local
+  # Base de Nominatim ya importada. external para no recrearla vacía nunca.
+  # Reconstrucción: infra/nominatim/README.md
+  nominatim_db:
+    external: true
+    name: labresultados_nominatim_db

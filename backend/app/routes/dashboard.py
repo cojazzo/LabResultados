@@ -4,6 +4,7 @@ from sqlalchemy import select, func, and_, or_
 from app.database import get_db
 from app.models import Resultado, Paciente, ReporteGenerado, Envio, Prueba, User
 from app.core.security import get_current_user
+from app.config import get_settings
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date, timedelta
@@ -291,17 +292,19 @@ async def geocodificar_pacientes(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Geocodifica en batch todos los pacientes de Aguascalientes que aún
-    no tienen coordenadas.
+    Geocodifica en batch los pacientes de Aguascalientes que aún no tienen
+    coordenadas, en lotes acotados para no exceder el timeout del proxy.
 
-    Llama a la API pública de Nominatim (OpenStreetMap) con respeto al
-    rate limit de 1 solicitud por segundo.
+    Usa Nominatim local (servicio del stack) y, como fallback, Google
+    Geocoding API. Ver app/services/geocoding.py.
 
     Solo usuarios autenticados pueden disparar este proceso.
     """
     from app.services.geocoding import geocode_batch
 
-    # Obtener pacientes de Aguascalientes sin geocodificar, en lotes de 60 para no dar Timeout
+    # Lote acotado: Nominatim local es rápido, pero el fallback a Google añade
+    # latencia. GEOCODING_BATCH_SIZE mantiene la respuesta bajo el proxy_read_timeout.
+    batch_size = get_settings().GEOCODING_BATCH_SIZE
     stmt = select(Paciente).where(
         and_(
             Paciente.lat.is_(None),
@@ -310,7 +313,7 @@ async def geocodificar_pacientes(
                 Paciente.municipio_residencia.ilike("%aguascalientes%"),
             )
         )
-    ).limit(60)
+    ).limit(batch_size)
     result = await db.execute(stmt)
     pacientes = result.scalars().all()
 
