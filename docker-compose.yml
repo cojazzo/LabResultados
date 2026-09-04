@@ -114,6 +114,11 @@ services:
       # que el contenedor NO reimporta y este archivo nunca se lee. Pero el
       # arranque exige que la variable esté definida.
       PBF_PATH: /nominatim/data/aguascalientes.osm.pbf
+    ports:
+      # Publicado para que otros proyectos/scripts del host o de la red (LAN /
+      # Tailscale) puedan geocodificar: http://<host>:8080/search
+      # Para limitarlo a Tailscale: "100.125.127.8:${NOMINATIM_HOST_PORT:-8080}:8080"
+      - "${NOMINATIM_HOST_PORT:-8080}:8080"
     volumes:
       - nominatim_db:/var/lib/postgresql/16/main
     shm_size: 512m
