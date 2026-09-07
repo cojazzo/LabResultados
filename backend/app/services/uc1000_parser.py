@@ -20,7 +20,7 @@ Jerarquía de fuentes:
   parser de Excel) o actualizado por una nueva carga de tira.
 
 Fórmula ACR:
-  ACR (mg/g) = (Albúmina mg/L ÷ Creatinina mg/dL) × 0.1
+  ACR (mg/g) = (Albúmina mg/L ÷ Creatinina mg/dL) × 100
 """
 
 import io
@@ -228,8 +228,8 @@ async def calculate_acr_for_patient(
     if cre_val <= 0:
         return None
 
-    # ACR = (Alb mg/L ÷ Creat mg/dL) × 0.1   →  mg/g
-    acr_val = (alb_val / cre_val) * 0.1
+    # ACR = (Alb mg/L ÷ (Creat mg/dL * 10 mg/L)) * 1000 mg/g = (Alb ÷ Creat) * 100
+    acr_val = (alb_val / cre_val) * 100
 
     # La fuente del ACR refleja la fuente menos confiable de los dos valores
     if alb_res.fuente == FUENTE_VITROS and cre_res.fuente == FUENTE_VITROS:
