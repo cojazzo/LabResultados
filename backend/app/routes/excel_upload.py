@@ -10,6 +10,7 @@ from app.models import Lote, Prueba, User
 from app.core.security import get_current_user
 from app.services.excel_parser import process_excel_file, process_tamizaje_excel
 from app.services.uc1000_parser import process_uc1000_csv
+from app.services.secundaria_parser import process_secundaria_excel
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -174,14 +175,30 @@ async def upload_uc1000(
 @router.post("/tamizaje", response_model=UploadResponse)
 async def upload_tamizaje(
     files: List[UploadFile] = File(...),
+    campana_id: Optional[int] = Query(None, description="ID de la campaña a asociar"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Sube uno o varios archivos Excel (.xlsx) de tamizaje (Google Forms) y procesa su contenido.
+    Si se proporciona campana_id, asocia los pacientes importados a esa campaña.
     """
+    from app.models import Campana, CampanaPaciente, Paciente
+    from sqlalchemy import select as sa_select
+
     lotes_procesados = []
     
+    # Validar campaña si se proporcionó
+    campana = None
+    if campana_id:
+        campana_res = await db.execute(sa_select(Campana).where(Campana.id == campana_id))
+        campana = campana_res.scalar_one_or_none()
+        if not campana:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Campaña con ID {campana_id} no encontrada"
+            )
+
     for file in files:
         if not file.filename.endswith((".xlsx", ".xls")):
             raise HTTPException(
@@ -198,6 +215,55 @@ async def upload_tamizaje(
                 usuario_id=current_user.id
             )
             lote = resultado["lote"]
+
+            # Asociar pacientes del lote a la campaña si se proporcionó
+            if campana:
+                # Obtener todos los pacientes creados/actualizados por este lote
+                import pandas as pd
+                import io as _io
+                df = pd.read_excel(_io.BytesIO(file_content), keep_default_na=False)
+                df = df.replace("", None)
+                from app.utils.validators import normalize_column_name
+                cols = {normalize_column_name(col): col for col in df.columns}
+                curp_col_name = None
+                for name in ["curp", "identificacion"]:
+                    if name in cols:
+                        curp_col_name = cols[name]
+                        break
+
+                if curp_col_name:
+                    origen_tipo = campana.tipo  # servicio_externo | campana_externa
+                    for _, row in df.iterrows():
+                        curp_val = str(row[curp_col_name]).strip().upper() if pd.notna(row[curp_col_name]) else ""
+                        if not curp_val or curp_val in ("NAN", "NONE"):
+                            continue
+                        from app.utils.curp_validator import match_patient_identifier
+                        identificador = match_patient_identifier(curp_val, "", "")
+                        if not identificador:
+                            identificador = curp_val
+                        pac_res = await db.execute(
+                            sa_select(Paciente).where(Paciente.identificacion == identificador)
+                        )
+                        pac = pac_res.scalar_one_or_none()
+                        if pac:
+                            # Actualizar origen del paciente
+                            if not pac.origen or pac.origen == "servicio_externo":
+                                pac.origen = origen_tipo
+                            # Inscribir en campaña
+                            cp_exists = await db.execute(
+                                sa_select(CampanaPaciente).where(
+                                    CampanaPaciente.campana_id == campana_id,
+                                    CampanaPaciente.paciente_id == pac.id,
+                                )
+                            )
+                            if not cp_exists.scalar_one_or_none():
+                                cp = CampanaPaciente(
+                                    campana_id=campana_id,
+                                    paciente_id=pac.id,
+                                    fuente_registro="google_form_excel",
+                                )
+                                db.add(cp)
+                    await db.commit()
             
             # Formatear el log_errores si existe
             log_err = None
@@ -385,3 +451,76 @@ async def get_lote(
         registros_error=lote.registros_error,
         log_errores=log_err
     )
+
+
+
+@router.post("/secundarias")
+async def upload_secundarias(
+    files: List[UploadFile] = File(...),
+    campana_id: int = Query(..., description="ID de la campaña de secundaria"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sube uno o varios archivos Excel con la base de datos de alumnos de secundaria.
+    Requiere un campana_id obligatorio de tipo 'secundaria'.
+    Columnas esperadas: CURP_ALUMNO, NOM_ALUMNO, P_APELLIDO_ALUMNO, S_APELLIDO_ALUMNO,
+    NombreCT, Turno, DireccionCT, Direccion_Alumno, Telefono_Alumno.
+    """
+    lotes_procesados = []
+    total_inscritos = 0
+
+    for file in files:
+        if not file.filename.endswith((".xlsx", ".xls")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El archivo '{file.filename}' no es un archivo Excel válido (.xlsx o .xls)"
+            )
+
+        file_content = await file.read()
+        try:
+            resultado = await process_secundaria_excel(
+                db=db,
+                file_content=file_content,
+                filename=file.filename,
+                usuario_id=current_user.id,
+                campana_id=campana_id,
+            )
+            lote = resultado["lote"]
+            total_inscritos += resultado.get("inscritos_campana", 0)
+
+            log_err = None
+            if lote.log_errores:
+                try:
+                    log_err = json.loads(lote.log_errores)
+                except Exception:
+                    log_err = [{"error": lote.log_errores}]
+
+            lotes_procesados.append(
+                LoteResponse(
+                    id=lote.id,
+                    nombre=lote.nombre,
+                    fecha_carga=lote.fecha_carga,
+                    estado=lote.estado,
+                    total_registros=lote.total_registros,
+                    registros_exitosos=lote.registros_exitosos,
+                    registros_error=lote.registros_error,
+                    log_errores=log_err,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error procesando el archivo de secundaria '{file.filename}': {str(e)}"
+            )
+
+    return {
+        "lotes": lotes_procesados,
+        "inscritos_campana": total_inscritos,
+        "mensaje": f"Se procesaron {len(lotes_procesados)} archivo(s) de secundaria. {total_inscritos} alumnos inscritos en la campaña."
+    }

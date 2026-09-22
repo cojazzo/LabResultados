@@ -11,6 +11,7 @@ import PerfilIndividualPage from './pages/PerfilIndividualPage.jsx'
 import QuimicosPage from './pages/QuimicosPage.jsx'
 import UsuariosPage from './pages/UsuariosPage.jsx'
 import ReportesExcelPage from './pages/ReportesExcelPage.jsx'
+import CampanasPage from './pages/CampanasPage.jsx'
 
 export default function App() {
   return (
@@ -53,6 +54,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <CatalogoPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/campanas"
+        element={
+          <ProtectedRoute>
+            <CampanasPage />
           </ProtectedRoute>
         }
       />

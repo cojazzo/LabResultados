@@ -93,7 +93,7 @@ async def get_dashboard_resumen(
 
 @router.get("/tendencia", response_model=List[TendenciaItem])
 async def get_dashboard_tendencia(
-    periodo: str = Query("mes", regex="^(dia|semana|mes)$"),
+    periodo: str = Query("mes", pattern="^(dia|semana|mes)$"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { uploadExcel, uploadTamizajeExcel, uploadUC1000, getLotes, generarMasivo } from '../api/client.js'
+import { uploadExcel, uploadTamizajeExcel, uploadUC1000, uploadSecundarias, getLotes, generarMasivo, getCampanas } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
-import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send, Users, Activity } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, Info, AlertCircle, FileText, Send, Users, Activity, PlusSquare } from 'lucide-react'
 import Badge from '../components/Badge.jsx'
 import Modal from '../components/Modal.jsx'
 import Pagination from '../components/Pagination.jsx'
@@ -25,7 +25,11 @@ export default function UploadPage() {
   const [generatingBatch, setGeneratingBatch] = useState(false)
   
   // Tipo de subida
-  const [uploadType, setUploadType] = useState('resultados') // 'resultados' o 'tamizaje'
+  const [uploadType, setUploadType] = useState('resultados') // 'resultados', 'tamizaje', 'uc1000', 'secundarias'
+  
+  // Campañas
+  const [campanas, setCampanas] = useState([])
+  const [selectedCampana, setSelectedCampana] = useState('')
 
   const fetchHistory = async () => {
     setLoadingHistory(true)
@@ -40,8 +44,18 @@ export default function UploadPage() {
     }
   }
 
+  const fetchCampanas = async () => {
+    try {
+      const res = await getCampanas({ estado: 'activa' })
+      setCampanas(res.data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   useEffect(() => {
     fetchHistory()
+    fetchCampanas()
   }, [page])
 
   const handleDrag = (e) => {
@@ -60,12 +74,15 @@ export default function UploadPage() {
     setDragActive(false)
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const files = Array.from(e.dataTransfer.files)
-      // Validar extensión
-      const validFiles = files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))
-      if (validFiles.length !== files.length) {
-        notify.warning('Solo se permiten archivos Excel (.xlsx, .xls)')
+      const isCsv = uploadType === 'uc1000'
+      const extMatch = isCsv 
+        ? files.filter(f => f.name.endsWith('.csv') || f.name.endsWith('.txt'))
+        : files.filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))
+        
+      if (extMatch.length !== files.length) {
+        notify.warning(isCsv ? 'Solo se permiten archivos .csv o .txt' : 'Solo se permiten archivos Excel (.xlsx, .xls)')
       }
-      setSelectedFiles(prev => [...prev, ...validFiles])
+      setSelectedFiles(prev => [...prev, ...extMatch])
     }
   }
 
@@ -82,16 +99,24 @@ export default function UploadPage() {
 
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return
+    
+    if (uploadType === 'secundarias' && !selectedCampana) {
+      notify.error('Debe seleccionar una campaña obligatoriamente para cargas secundarias.')
+      return
+    }
+
     setUploading(true)
     try {
       notify.info('Subiendo y procesando archivos...')
       let response
       if (uploadType === 'tamizaje') {
-        response = await uploadTamizajeExcel(selectedFiles)
+        response = await uploadTamizajeExcel(selectedFiles, selectedCampana || null)
       } else if (uploadType === 'uc1000') {
-        response = await uploadUC1000(selectedFiles)
+        response = await uploadUC1000(selectedFiles, selectedCampana || null)
+      } else if (uploadType === 'secundarias') {
+        response = await uploadSecundarias(selectedFiles, selectedCampana)
       } else {
-        response = await uploadExcel(selectedFiles)
+        response = await uploadExcel(selectedFiles, selectedCampana || null)
       }
       notify.success(response.data.mensaje || 'Archivos procesados correctamente.')
       setSelectedFiles([])
@@ -125,6 +150,10 @@ export default function UploadPage() {
     }
   }
 
+  const filteredCampanas = uploadType === 'secundarias' 
+    ? campanas.filter(c => c.tipo === 'secundaria')
+    : campanas
+
   return (
     <div className="space-y-8">
       {/* ── Drag & Drop Upload Zone ───────────────────────────── */}
@@ -133,12 +162,13 @@ export default function UploadPage() {
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
             {uploadType === 'resultados' ? 'Cargar Nuevos Resultados (Excel)'
               : uploadType === 'tamizaje' ? 'Cargar Datos de Tamizaje'
+              : uploadType === 'secundarias' ? 'Cargar Resultados Secundarios'
               : 'Cargar Tira Reactiva UC-1000 (CSV)'}
           </h3>
-          <div className="flex bg-slate-100 p-1 rounded-xl">
+          <div className="flex bg-slate-100 p-1 rounded-xl flex-wrap">
             <button
-              onClick={() => setUploadType('resultados')}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+              onClick={() => { setUploadType('resultados'); setSelectedFiles([]) }}
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition ${
                 uploadType === 'resultados' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -148,8 +178,8 @@ export default function UploadPage() {
               </div>
             </button>
             <button
-              onClick={() => setUploadType('tamizaje')}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+              onClick={() => { setUploadType('tamizaje'); setSelectedFiles([]) }}
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition ${
                 uploadType === 'tamizaje' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -159,8 +189,19 @@ export default function UploadPage() {
               </div>
             </button>
             <button
+              onClick={() => { setUploadType('secundarias'); setSelectedFiles([]); setSelectedCampana('') }}
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition ${
+                uploadType === 'secundarias' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <PlusSquare className="w-4 h-4" />
+                Secundarias
+              </div>
+            </button>
+            <button
               onClick={() => { setUploadType('uc1000'); setSelectedFiles([]) }}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition ${
                 uploadType === 'uc1000' ? 'bg-white shadow-sm text-teal-700' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -185,6 +226,25 @@ export default function UploadPage() {
               </ol>
               <p className="mt-1.5 text-blue-500">Los valores de Vitros tienen prioridad sobre los de tira y nunca serán sobreescritos por una recarga de CSV.</p>
             </div>
+          </div>
+        )}
+
+        {/* Selección de Campaña */}
+        {(uploadType === 'tamizaje' || uploadType === 'secundarias') && (
+          <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Asociar a Campaña {uploadType === 'secundarias' ? '(Obligatorio)' : '(Opcional)'}
+            </label>
+            <select
+              value={selectedCampana}
+              onChange={(e) => setSelectedCampana(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
+            >
+              <option value="">{uploadType === 'secundarias' ? '-- Seleccione una Campaña --' : '-- Sin Campaña --'}</option>
+              {filteredCampanas.map(c => (
+                <option key={c.id} value={c.id}>{c.nombre} ({c.tipo})</option>
+              ))}
+            </select>
           </div>
         )}
 
