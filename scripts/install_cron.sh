@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # =============================================================================
 # LabResultados — Instalar cron job de backup diario
 # Ejecutar UNA VEZ en el servidor Ubuntu.

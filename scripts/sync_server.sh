@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # =============================================================================
 # LabResultados — Sincronizar servidor con el repo (sin conflictos)
 # Ejecutar en el servidor: bash scripts/sync_server.sh

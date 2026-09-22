@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # =============================================================================
 # LabResultados — Server Backup Script
 # Respalda: PostgreSQL + PDFs clinicos + n8n (workflows y credenciales)
@@ -9,8 +9,8 @@
 set -euo pipefail
 
 # --- Configuracion -----------------------------------------------------------
-PROJECT_DIR="$HOME/LabResultados"
-BACKUP_DIR="$HOME/backups/labresultados"
+PROJECT_DIR="/home/inaer/LabResultados"
+BACKUP_DIR="/home/inaer/backups/labresultados"
 RETAIN_DAYS=7
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M")
 LOG_FILE="$BACKUP_DIR/backup.log"
@@ -23,6 +23,8 @@ log() {
     echo "$msg"
     echo "$msg" >> "$LOG_FILE"
 }
+
+trap 'log "ERROR: fallo inesperado en la linea $LINENO (comando: $BASH_COMMAND)"' ERR
 
 # --- Crear directorios -------------------------------------------------------
 mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/pdfs" "$BACKUP_DIR/n8n"
