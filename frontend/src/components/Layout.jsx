@@ -15,12 +15,14 @@ import {
   Users,
   ChevronRight,
   FileDown,
+  Flag,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/upload', label: 'Cargar Excel', icon: FileSpreadsheet },
   { to: '/resultados', label: 'Resultados', icon: ClipboardList },
+  { to: '/campanas', label: 'Campañas', icon: Flag },
   { to: '/envios', label: 'Envíos', icon: Send },
   { to: '/catalogo', label: 'Catálogo', icon: BookOpen },
   { to: '/perfiles', label: 'Perfiles', icon: Users },
@@ -33,6 +35,7 @@ const pageTitles = {
   '/': 'Dashboard',
   '/upload': 'Cargar Archivo Excel',
   '/resultados': 'Resultados de Laboratorio',
+  '/campanas': 'Gestión de Campañas',
   '/envios': 'Historial de Envíos',
   '/catalogo': 'Catálogo de Pruebas',
   '/perfiles': 'Perfiles de Pacientes',

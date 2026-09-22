@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Numeric, Text, Table, Index
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Numeric, Text, Table, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -47,6 +47,9 @@ class Paciente(Base):
     whatsapp_consent = Column(Boolean, default=False)
     result_delivery_consent = Column(Boolean, default=False)
     # ---------------------------------------
+    # --- Clasificación por origen ---
+    origen = Column(String, default="servicio_externo", nullable=True)  # secundaria | servicio_externo | campana_externa
+    # ---------------------------------
     # --- Geocoordinadas (Nominatim / OpenStreetMap) ---
     lat = Column(Numeric(precision=9, scale=6), nullable=True)
     lon = Column(Numeric(precision=9, scale=6), nullable=True)
@@ -57,6 +60,7 @@ class Paciente(Base):
 
     resultados = relationship("Resultado", back_populates="paciente")
     reportes = relationship("ReporteGenerado", back_populates="paciente")
+    campana_inscripciones = relationship("CampanaPaciente", back_populates="paciente")
 
 class Quimico(Base):
     __tablename__ = "quimicos"
@@ -210,3 +214,44 @@ class AutomationEvent(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+
+class Campana(Base):
+    __tablename__ = "campanas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    slug = Column(String, unique=True, index=True, nullable=False)  # identificador URL-friendly
+    tipo = Column(String, nullable=False)  # secundaria | servicio_externo | campana_externa
+    descripcion = Column(String, nullable=True)
+    fecha_inicio = Column(Date, nullable=True)
+    fecha_fin = Column(Date, nullable=True)
+    ubicacion = Column(String, nullable=True)       # Nombre del lugar
+    direccion = Column(String, nullable=True)        # Dirección completa
+    estado = Column(String, default="activa")        # planificada | activa | cerrada
+    lat = Column(Numeric(precision=9, scale=6), nullable=True)
+    lon = Column(Numeric(precision=9, scale=6), nullable=True)
+    metadata_json = Column(Text, nullable=True)      # JSON libre para datos extra
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    inscripciones = relationship("CampanaPaciente", back_populates="campana")
+
+
+class CampanaPaciente(Base):
+    __tablename__ = "campana_pacientes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False, index=True)
+    paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False, index=True)
+    fecha_inscripcion = Column(DateTime(timezone=True), server_default=func.now())
+    fuente_registro = Column(String, default="manual")  # excel_escuela | google_form_excel | n8n_form | manual
+    datos_contextuales = Column(Text, nullable=True)    # JSON: {secundaria, turno, direccion_escuela, cct}
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    campana = relationship("Campana", back_populates="inscripciones")
+    paciente = relationship("Paciente", back_populates="campana_inscripciones")
+
+    __table_args__ = (
+        UniqueConstraint("campana_id", "paciente_id", name="uq_campana_paciente"),
+        Index("idx_campana_pacientes_campana", "campana_id"),
+    )

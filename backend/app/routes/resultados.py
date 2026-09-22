@@ -44,6 +44,7 @@ class PacienteInfo(BaseModel):
     tipo_agua: Optional[str] = None
     cocina_agua_llave: Optional[str] = None
     padecimientos: Optional[str] = None
+    origen: Optional[str] = None
 
 class ResultadoResponse(BaseModel):
     id: int
@@ -71,6 +72,7 @@ async def get_resultados(
     fecha_desde: Optional[date] = None,
     fecha_hasta: Optional[date] = None,
     interpretacion: Optional[str] = None,
+    origen: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1),
@@ -94,6 +96,9 @@ async def get_resultados(
         conditions.append(Resultado.fecha_toma <= fecha_hasta)
     if interpretacion and interpretacion != "todos":
         conditions.append(Resultado.interpretacion == interpretacion)
+    
+    if origen and origen != "todos":
+        conditions.append(Resultado.paciente.has(Paciente.origen == origen))
         
     if search:
         search_terms = search.strip().split()

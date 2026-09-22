@@ -8,6 +8,7 @@ import {
   descargarReporte,
   getDashboardMapaHexbin,
   geocodificarPacientes,
+  getCampanasStatsPorOrigen,
 } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
 import {
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const [anormales, setAnormales] = useState([])
   const [topPruebas, setTopPruebas] = useState([])
   const [recientes, setRecientes] = useState([])
+  const [origenStats, setOrigenStats] = useState([])
   const [mapaPuntos, setMapaPuntos] = useState({ tamizados: [], positivos: [] })
   const [loadingMapa, setLoadingMapa] = useState(true)
   const [geocodificando, setGeocodificando] = useState(false)
@@ -66,12 +68,13 @@ export default function DashboardPage() {
       if (fechaDesde) filters.desde = fechaDesde
       if (fechaHasta) filters.hasta = fechaHasta
 
-      const [resResumen, resTendencia, resAnormales, resTop, resRecientes] = await Promise.all([
+      const [resResumen, resTendencia, resAnormales, resTop, resRecientes, resOrigen] = await Promise.all([
         getDashboardResumen(filters),
         getDashboardTendencia(filters),
         getDashboardAnormales(),
         getDashboardTopPruebas(5),
         getResultados({ limit: 10 }),
+        getCampanasStatsPorOrigen().catch(() => ({ data: [] })),
       ])
 
       setResumen(resResumen.data)
@@ -79,6 +82,7 @@ export default function DashboardPage() {
       setAnormales(resAnormales.data)
       setTopPruebas(resTop.data)
       setRecientes(resRecientes.data)
+      setOrigenStats(resOrigen.data)
     } catch (err) {
       console.error(err)
       notify.error('Error al cargar datos del dashboard.')
@@ -263,9 +267,9 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Charts Grid ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Line Chart: Tendencia */}
-        <div className="lg:col-span-2 p-6 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[350px]">
+        <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[350px]">
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">
             Volumen de Pruebas en el Tiempo
           </h3>
@@ -278,6 +282,28 @@ export default function DashboardPage() {
                 <Tooltip />
                 <Line type="monotone" dataKey="cantidad" stroke="#0d9488" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Bar Chart: Origen de Pacientes */}
+        <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[350px]">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">
+            Pacientes por Origen
+          </h3>
+          <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={origenStats} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" stroke="#94a3b8" fontSize={10} />
+                <YAxis dataKey="origen" type="category" stroke="#94a3b8" fontSize={10} width={100} tickFormatter={(val) => val.replace('_', ' ').toUpperCase()} />
+                <Tooltip formatter={(value) => [value, "Pacientes"]} labelFormatter={(label) => label.replace('_', ' ').toUpperCase()} />
+                <Bar dataKey="cantidad" fill="#3b82f6" radius={[0, 4, 4, 0]}>
+                  {origenStats.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>

@@ -67,6 +67,7 @@ class PacienteDetalleResponse(BaseModel):
     tipo_agua: Optional[str] = None
     cocina_agua_llave: Optional[str] = None
     padecimientos: Optional[str] = None
+    origen: Optional[str] = None
 
     class Config:
         from_attributes = True

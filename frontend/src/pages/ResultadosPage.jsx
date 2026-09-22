@@ -19,6 +19,7 @@ import {
   Square,
   CheckCircle,
   Eye,
+  Flag,
 } from 'lucide-react'
 import Badge from '../components/Badge.jsx'
 import Modal from '../components/Modal.jsx'
@@ -164,6 +165,7 @@ export default function ResultadosPage() {
   const [filtroFechaDesde, setFiltroFechaDesde] = useState('')
   const [filtroFechaHasta, setFiltroFechaHasta] = useState('')
   const [filtroInterpretacion, setFiltroInterpretacion] = useState('todos')
+  const [filtroOrigen, setFiltroOrigen] = useState('todos')
 
   // Selección múltiple de visitas
   const [selectedVisitaKeys, setSelectedVisitaKeys] = useState([])
@@ -212,6 +214,7 @@ export default function ResultadosPage() {
       if (filtroFechaDesde) filters.fecha_desde = filtroFechaDesde
       if (filtroFechaHasta) filters.fecha_hasta = filtroFechaHasta
       if (filtroInterpretacion !== 'todos') filters.interpretacion = filtroInterpretacion
+      if (filtroOrigen !== 'todos') filters.origen = filtroOrigen
       if (filtroPaciente.trim()) filters.search = filtroPaciente.trim()
 
       const response = await getResultados(filters)
@@ -237,7 +240,7 @@ export default function ResultadosPage() {
 
   useEffect(() => {
     fetchResultados()
-  }, [page, filtroPrueba, filtroFechaDesde, filtroFechaHasta, filtroInterpretacion])
+  }, [page, filtroPrueba, filtroFechaDesde, filtroFechaHasta, filtroInterpretacion, filtroOrigen])
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -378,6 +381,16 @@ export default function ResultadosPage() {
     }
   }
 
+  const getOrigenLabel = (origen) => {
+    switch (origen) {
+      case 'secundaria': return 'Secundaria';
+      case 'servicio_externo': return 'Servicio Externo';
+      case 'campana_externa': return 'Campaña Externa';
+      case 'tamizaje': return 'Tamizaje';
+      default: return 'General';
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* ── Filters and Search ────────────────────────────────── */}
@@ -403,7 +416,7 @@ export default function ResultadosPage() {
           </button>
         </form>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-2 border-t border-slate-100">
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
               Estudio / Prueba
@@ -440,12 +453,40 @@ export default function ResultadosPage() {
 
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+              Origen
+            </label>
+            <select
+              value={filtroOrigen}
+              onChange={(e) => setFiltroOrigen(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-teal-500 transition"
+            >
+              <option value="todos">Todos</option>
+              <option value="secundaria">Secundaria</option>
+              <option value="servicio_externo">Servicio Externo</option>
+              <option value="campana_externa">Campaña Externa</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
               Fecha Toma (Desde)
             </label>
             <input
               type="date"
               value={filtroFechaDesde}
               onChange={(e) => setFiltroFechaDesde(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-teal-500 transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+              Fecha Toma (Hasta)
+            </label>
+            <input
+              type="date"
+              value={filtroFechaHasta}
+              onChange={(e) => setFiltroFechaHasta(e.target.value)}
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-teal-500 transition"
             />
           </div>
@@ -527,7 +568,15 @@ export default function ResultadosPage() {
                     </button>
                   </td>
                   <td className="py-3.5">
-                    <div className="font-semibold text-slate-800">{v.paciente.nombre} {v.paciente.apellido} {v.paciente.apellido_materno || ''}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-semibold text-slate-800">{v.paciente.nombre} {v.paciente.apellido} {v.paciente.apellido_materno || ''}</div>
+                      {v.paciente.origen && (
+                        <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 uppercase">
+                          <Flag className="w-2.5 h-2.5" />
+                          {getOrigenLabel(v.paciente.origen)}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-slate-400 uppercase font-mono">{v.paciente.identificacion}</div>
                   </td>
                   <td className="py-3.5 text-slate-500 text-xs">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router'
 import { login, getMe } from '../api/client.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -9,12 +9,19 @@ export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const { loginUser } = useAuth()
+  const { loginUser, user } = useAuth()
   const notify = useNotification()
   const navigate = useNavigate()
   const location = useLocation()
 
-  const from = location.state?.from?.pathname || '/'
+  const rawFrom = location.state?.from?.pathname
+  const from = (rawFrom && rawFrom !== '/login') ? rawFrom : '/'
+
+  useEffect(() => {
+    if (user && localStorage.getItem('lab_token')) {
+      navigate('/', { replace: true })
+    }
+  }, [user, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -37,8 +44,12 @@ export default function LoginPage() {
       navigate(from, { replace: true })
     } catch (err) {
       console.error(err)
-      notify.error(err.response?.data?.detail || 'Error al iniciar sesión. Verifica tus credenciales.')
       localStorage.removeItem('lab_token')
+      const msg = err.response?.data?.detail 
+        || (err.response?.status === 502 ? 'Servidor no disponible (502 Bad Gateway). Contacte al administrador.' : null)
+        || (err.message === 'Network Error' ? 'Error de red. No se puede conectar con el backend.' : null)
+        || 'Error al iniciar sesión. Verifica tus credenciales.'
+      notify.error(msg)
     } finally {
       setLoading(false)
     }

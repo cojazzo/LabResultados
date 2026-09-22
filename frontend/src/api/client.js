@@ -18,9 +18,11 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 && !err.config?.url?.includes('/auth/login')) {
       localStorage.removeItem('lab_token')
-      window.location.href = '/login'
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   },
@@ -43,10 +45,20 @@ export const uploadExcel = (files) => {
   })
 }
 
-export const uploadTamizajeExcel = (files) => {
+export const uploadTamizajeExcel = (files, campanaId = null) => {
   const fd = new FormData()
   files.forEach((f) => fd.append('files', f))
-  return client.post('/upload/tamizaje', fd, {
+  let url = '/upload/tamizaje'
+  if (campanaId) url += `?campana_id=${campanaId}`
+  return client.post(url, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export const uploadSecundarias = (files, campanaId) => {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  return client.post(`/upload/secundarias?campana_id=${campanaId}`, fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
@@ -144,6 +156,14 @@ export const createPrueba = (data) =>
 export const updatePrueba = (id, data) =>
   client.put(`/catalogo/pruebas/${id}`, data)
 
+
+// ── Campañas ────────────────────────────────────────────────────────
+export const getCampanas = (filters = {}) => client.get('/campanas', { params: filters })
+export const getCampana = (id) => client.get(`/campanas/${id}`)
+export const createCampana = (data) => client.post('/campanas', data)
+export const updateCampana = (id, data) => client.patch(`/campanas/${id}`, data)
+export const getCampanaPacientes = (id, params = {}) => client.get(`/campanas/${id}/pacientes`, { params })
+export const getCampanasStatsPorOrigen = () => client.get('/campanas/stats/por-origen')
 
 // ── Químicos ──────────────────────────────────────────────────────
 export const getQuimicos = () => client.get('/quimicos')

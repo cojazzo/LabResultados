@@ -96,3 +96,18 @@ logs/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# ========================
+# Excel y datos temporales
+# ========================
+*.xlsx
+*.xls
+
+# ========================
+# Scripts temporales / scratch
+# ========================
+backend/scratch/
+backend/fix_backend.py
+backend/test_secundaria_upload.py
+backend/test_stats.py
+
