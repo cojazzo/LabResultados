@@ -370,9 +370,15 @@ async def exportar_pdfs_campana(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Descarga un ZIP con los reportes PDF ya generados de los pacientes
-    inscritos en la campaña (el más reciente de cada paciente).
+    Descarga un ZIP con el reporte PDF de cada visita (paciente + fecha de
+    toma) de los pacientes inscritos en la campaña. Regenera cada reporte
+    con los resultados más actuales antes de empaquetarlo, excepto los que
+    ya fueron autorizados (esos se incluyen tal cual, sin sobreescribirlos).
     """
+    from collections import defaultdict
+    from app.models import ReporteResultado
+    from app.services.pdf_generator import generate_report_pdf
+
     campana_res = await db.execute(select(Campana).where(Campana.id == campana_id))
     campana = campana_res.scalar_one_or_none()
     if not campana:
@@ -385,6 +391,54 @@ async def exportar_pdfs_campana(
     if not paciente_ids:
         raise HTTPException(status_code=404, detail="La campaña no tiene pacientes inscritos")
 
+    # 1. Agrupar los resultados actuales de estos pacientes por visita (paciente + fecha de toma)
+    resultados_res = await db.execute(
+        select(Resultado.id, Resultado.paciente_id, Resultado.fecha_toma)
+        .where(Resultado.paciente_id.in_(paciente_ids))
+    )
+    visitas: dict[tuple, list[int]] = defaultdict(list)
+    for resultado_id, paciente_id, fecha_toma in resultados_res.all():
+        visitas[(paciente_id, fecha_toma)].append(resultado_id)
+
+    if not visitas:
+        raise HTTPException(
+            status_code=404,
+            detail="Ningún paciente de esta campaña tiene resultados registrados"
+        )
+
+    # 2. Detectar que visitas ya tienen un reporte AUTORIZADO — esas no se tocan
+    autorizados_res = await db.execute(
+        select(ReporteGenerado.paciente_id, Resultado.fecha_toma)
+        .join(ReporteResultado, ReporteResultado.reporte_id == ReporteGenerado.id)
+        .join(Resultado, Resultado.id == ReporteResultado.resultado_id)
+        .where(
+            ReporteGenerado.paciente_id.in_(paciente_ids),
+            ReporteGenerado.authorized_at.isnot(None),
+        )
+        .distinct()
+    )
+    visitas_autorizadas = {(pid, fecha) for pid, fecha in autorizados_res.all()}
+
+    # 3. Regenerar cada visita no autorizada con sus resultados mas actuales
+    regenerados = 0
+    saltados_autorizados = 0
+    for (paciente_id, fecha_toma), resultado_ids in visitas.items():
+        if (paciente_id, fecha_toma) in visitas_autorizadas:
+            saltados_autorizados += 1
+            continue
+        try:
+            await generate_report_pdf(
+                db=db,
+                paciente_id=paciente_id,
+                resultado_ids=resultado_ids,
+                generado_por=current_user.id,
+            )
+            regenerados += 1
+        except ValueError:
+            continue
+
+    # 4. Recolectar todos los reportes vigentes de estos pacientes (puede haber
+    #    mas de uno por paciente si tuvo visitas en fechas distintas)
     reportes_res = await db.execute(
         select(ReporteGenerado)
         .where(ReporteGenerado.paciente_id.in_(paciente_ids))
@@ -393,26 +447,18 @@ async def exportar_pdfs_campana(
     )
     reportes = reportes_res.scalars().all()
 
-    # Quedarnos con un solo reporte por paciente (el mas reciente; la query ya viene ordenada)
-    vistos = set()
-    reportes_unicos = []
-    for r in reportes:
-        if r.paciente_id in vistos:
-            continue
-        vistos.add(r.paciente_id)
-        reportes_unicos.append(r)
-
-    if not reportes_unicos:
+    if not reportes:
         raise HTTPException(
             status_code=404,
-            detail="Ningún paciente de esta campaña tiene un reporte PDF generado todavía"
+            detail="No se pudo generar ningún reporte PDF para esta campaña"
         )
 
     zip_buffer = io.BytesIO()
     incluidos = 0
     faltantes = 0
+    nombres_usados: dict[str, int] = {}
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for r in reportes_unicos:
+        for r in reportes:
             if not r.ruta_archivo or not os.path.isfile(r.ruta_archivo):
                 faltantes += 1
                 continue
@@ -420,6 +466,13 @@ async def exportar_pdfs_campana(
             apellido = (pac.apellido or "").strip().replace(" ", "_") if pac else ""
             nombre = (pac.nombre or "").strip().replace(" ", "_") if pac else ""
             nombre_archivo = f"{r.folio}_{apellido}_{nombre}.pdf".strip("_")
+            # Evitar colisiones si dos reportes distintos terminaran con el mismo nombre
+            if nombre_archivo in nombres_usados:
+                nombres_usados[nombre_archivo] += 1
+                base, ext = os.path.splitext(nombre_archivo)
+                nombre_archivo = f"{base}_{nombres_usados[nombre_archivo]}{ext}"
+            else:
+                nombres_usados[nombre_archivo] = 0
             zf.write(r.ruta_archivo, arcname=nombre_archivo)
             incluidos += 1
 
@@ -435,9 +488,14 @@ async def exportar_pdfs_campana(
 
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"',
-        "Access-Control-Expose-Headers": "X-Pacientes-Sin-Reporte, X-Pacientes-Incluidos",
+        "Access-Control-Expose-Headers": (
+            "X-Pacientes-Sin-Reporte, X-Pacientes-Incluidos, "
+            "X-Reportes-Regenerados, X-Reportes-Autorizados-Sin-Tocar"
+        ),
         "X-Pacientes-Sin-Reporte": str(faltantes),
         "X-Pacientes-Incluidos": str(incluidos),
+        "X-Reportes-Regenerados": str(regenerados),
+        "X-Reportes-Autorizados-Sin-Tocar": str(saltados_autorizados),
     }
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 

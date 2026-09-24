@@ -131,15 +131,22 @@ export default function CampanasPage() {
 
       const sinReporte = parseInt(res.headers['x-pacientes-sin-reporte'] || '0', 10)
       const incluidos = parseInt(res.headers['x-pacientes-incluidos'] || '0', 10)
+      const regenerados = parseInt(res.headers['x-reportes-regenerados'] || '0', 10)
+      const autorizadosSinTocar = parseInt(res.headers['x-reportes-autorizados-sin-tocar'] || '0', 10)
+
+      let msg = `Se descargaron ${incluidos} PDF(s) (${regenerados} recién actualizados`
+      if (autorizadosSinTocar > 0) msg += `, ${autorizadosSinTocar} autorizados sin modificar`
+      msg += ').'
       if (sinReporte > 0) {
-        notify.info(`Se descargaron ${incluidos} PDF(s). ${sinReporte} paciente(s) de la campaña aún no tienen reporte generado.`)
+        msg += ` ${sinReporte} visita(s) no se pudieron incluir (sin archivo disponible).`
+        notify.info(msg)
       } else {
-        notify.success(`Se descargaron ${incluidos} PDF(s) en un archivo ZIP.`)
+        notify.success(msg)
       }
     } catch (err) {
       const status = err.response?.status
       if (status === 404) {
-        notify.error('Ningún paciente de esta campaña tiene un reporte PDF generado todavía.')
+        notify.error('Ningún paciente de esta campaña tiene resultados registrados todavía.')
       } else {
         notify.error('Error al descargar los reportes PDF de la campaña')
       }
