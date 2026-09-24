@@ -119,24 +119,48 @@ async def get_resultados(
             )
         )
 
-    # Calcular total de registros antes de paginar
-    count_stmt = select(func.count(Resultado.id)).where(and_(*conditions))
-    total_res = await db.execute(count_stmt)
+    # Paginar por VISITA (paciente + fecha de toma) en vez de por fila de
+    # resultado suelta — si no, una visita con varias pruebas puede quedar
+    # partida entre dos páginas cuando cae justo en el límite.
+    visitas_stmt = (
+        select(Resultado.paciente_id, Resultado.fecha_toma)
+        .where(and_(*conditions))
+        .distinct()
+    )
+
+    total_res = await db.execute(select(func.count()).select_from(visitas_stmt.subquery()))
     total_count = total_res.scalar() or 0
     response.headers["X-Total-Count"] = str(total_count)
     response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
 
+    visitas_page_stmt = (
+        visitas_stmt
+        .order_by(desc(Resultado.fecha_toma), desc(Resultado.paciente_id))
+        .offset(offset)
+        .limit(limit)
+    )
+    visitas_res = await db.execute(visitas_page_stmt)
+    visitas_keys = visitas_res.all()
+
+    if not visitas_keys:
+        return []
+
+    # Traer TODOS los resultados de esas visitas (no solo los que cumplen
+    # filtros como prueba_id/interpretacion) para mostrar la visita completa.
+    visita_conditions = or_(*[
+        and_(Resultado.paciente_id == pid, Resultado.fecha_toma == fecha)
+        for pid, fecha in visitas_keys
+    ])
+
     stmt = (
         select(Resultado)
-        .where(and_(*conditions))
+        .where(visita_conditions)
         .options(
             selectinload(Resultado.paciente),
             selectinload(Resultado.prueba),
 
         )
-        .order_by(desc(Resultado.fecha_toma), desc(Resultado.id))
-        .offset(offset)
-        .limit(limit)
+        .order_by(desc(Resultado.fecha_toma), desc(Resultado.paciente_id), Resultado.prueba_id)
     )
 
     result = await db.execute(stmt)
