@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models import Lote, Paciente, Prueba, Resultado
-from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion
+from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion, interpretar_valor_texto
 from app.utils.curp_validator import match_patient_identifier
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
@@ -215,7 +215,7 @@ async def process_excel_file(db: AsyncSession, file_content: bytes, filename: st
             )
         except ValueError:
             valor_text = valor_raw
-            interpretacion = "normal"
+            interpretacion = interpretar_valor_texto(valor_text)
 
         # Fechas y observaciones adicionales
         fecha_res_val = parse_date(row[resolved_cols["fecha_resultado"]]) if resolved_cols["fecha_resultado"] else None
@@ -446,7 +446,7 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
                 )
             except ValueError:
                 valor_text = valor_raw
-                interpretacion = "normal"
+                interpretacion = interpretar_valor_texto(valor_text)
 
             # Buscar si ya existe el resultado para esta visita para evitar duplicados
             res_stmt = select(Resultado).where(

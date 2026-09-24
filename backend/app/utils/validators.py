@@ -98,5 +98,20 @@ def calcular_interpretacion(
         return "bajo"
     if val_max is not None and val > val_max:
         return "alto"
-    
+
+    return "normal"
+
+def interpretar_valor_texto(valor_texto: str | None) -> str:
+    """
+    Interpreta resultados no numéricos que quedan fuera del rango medible
+    del equipo (ej. 'over', '>300', '<0.1'). Sin esto, un resultado fuera
+    de rango se reportaba como "normal" por default.
+    """
+    if not valor_texto:
+        return "normal"
+    val = valor_texto.strip().lower()
+    if "over" in val or val.startswith(">"):
+        return "critico_alto"
+    if val.startswith("<"):
+        return "critico_bajo"
     return "normal"

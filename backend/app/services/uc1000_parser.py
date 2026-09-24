@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models import Lote, Paciente, Prueba, Resultado
-from app.utils.validators import calcular_interpretacion
+from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
 
 # ---------------------------------------------------------------------------
 # Constantes de mapeo por ÍNDICE de columna (0-based)
@@ -157,6 +157,8 @@ async def _upsert_resultado_jerarquico(
                 valor_num, prueba.valor_min, prueba.valor_max,
                 prueba.valor_critico_min, prueba.valor_critico_max
             )
+        else:
+            existing.interpretacion = interpretar_valor_texto(valor_texto)
     else:
         interpretacion = "normal"
         if valor_num is not None:
@@ -164,6 +166,8 @@ async def _upsert_resultado_jerarquico(
                 valor_num, prueba.valor_min, prueba.valor_max,
                 prueba.valor_critico_min, prueba.valor_critico_max
             )
+        else:
+            interpretacion = interpretar_valor_texto(valor_texto)
         new_r = Resultado(
             lote_id      = lote_id,
             paciente_id  = paciente_id,
