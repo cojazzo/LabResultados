@@ -11,8 +11,9 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Megaphone,
 } from 'lucide-react'
-import { exportarReporteExcel, getPruebas, descargarTemplateExcel } from '../api/client.js'
+import { exportarReporteExcel, getPruebas, descargarTemplateExcel, getCampanas } from '../api/client.js'
 
 // Columnas de tamizaje disponibles (mismo orden que el backend)
 const TAMIZAJE_COLS = [
@@ -105,6 +106,11 @@ export default function ReportesExcelPage() {
   const [fechaInicio, setFechaInicio] = useState('')
   const [fechaFin, setFechaFin] = useState('')
 
+  // Campaña (opcional — limita el reporte a los pacientes de una campaña)
+  const [campanas, setCampanas] = useState([])
+  const [loadingCampanas, setLoadingCampanas] = useState(true)
+  const [selectedCampanaId, setSelectedCampanaId] = useState('')
+
   // Selección de columnas de tamizaje (todas activas por defecto)
   const [selectedTamizaje, setSelectedTamizaje] = useState(new Set(TAMIZAJE_COLS))
 
@@ -134,6 +140,21 @@ export default function ReportesExcelPage() {
       }
     }
     fetchPruebas()
+  }, [])
+
+  // Cargar campañas al montar
+  useEffect(() => {
+    const fetchCampanas = async () => {
+      try {
+        const res = await getCampanas()
+        setCampanas(res.data || [])
+      } catch {
+        // Si falla, simplemente no se ofrece el filtro por campaña
+      } finally {
+        setLoadingCampanas(false)
+      }
+    }
+    fetchCampanas()
   }, [])
 
   // ── Helpers de selección ──────────────────────────────────────────
@@ -190,6 +211,7 @@ export default function ReportesExcelPage() {
         fechaFin || null,
         camposParam,
         pruebaIdsParam,
+        selectedCampanaId || null,
       )
 
       const disposition = res.headers['content-disposition'] || ''
@@ -289,6 +311,37 @@ export default function ReportesExcelPage() {
             >
               Limpiar fechas
             </button>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* ── Filtro por campaña ───────────────────────────────────────── */}
+      <SectionCard icon={Megaphone} title="Campaña" defaultOpen={true}>
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400">
+            Opcional — limita el reporte a los pacientes inscritos en una campaña específica
+          </p>
+          {loadingCampanas ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Cargando campañas…
+            </div>
+          ) : (
+            <select
+              value={selectedCampanaId}
+              onChange={(e) => setSelectedCampanaId(e.target.value)}
+              className="
+                w-full px-3 py-2.5 rounded-xl border border-slate-200
+                text-slate-800 text-sm bg-white
+                focus:outline-none focus:ring-2 focus:ring-emerald-400/50 focus:border-emerald-400
+                transition-all duration-150
+              "
+            >
+              <option value="">Todas las campañas (sin filtro)</option>
+              {campanas.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
           )}
         </div>
       </SectionCard>

@@ -102,12 +102,13 @@ export const getReportes = (page = 1) =>
 export const descargarReporte = (id) =>
   client.get(`/reportes/${id}/descargar`, { responseType: 'blob' })
 
-export const exportarReporteExcel = (fechaInicio, fechaFin, campos, pruebaIds) => {
+export const exportarReporteExcel = (fechaInicio, fechaFin, campos, pruebaIds, campanaId) => {
   const params = {}
   if (fechaInicio) params.fecha_inicio = fechaInicio
   if (fechaFin) params.fecha_fin = fechaFin
   if (campos && campos.length > 0) params.campos = campos.join(',')
   if (pruebaIds && pruebaIds.length > 0) params.prueba_ids = pruebaIds.join(',')
+  if (campanaId) params.campana_id = campanaId
   return client.get('/reportes/exportar-excel', { params, responseType: 'blob' })
 }
 
@@ -163,6 +164,8 @@ export const getCampana = (id) => client.get(`/campanas/${id}`)
 export const createCampana = (data) => client.post('/campanas', data)
 export const updateCampana = (id, data) => client.patch(`/campanas/${id}`, data)
 export const getCampanaPacientes = (id, params = {}) => client.get(`/campanas/${id}/pacientes`, { params })
+export const descargarReportesPdfCampana = (id) =>
+  client.get(`/campanas/${id}/reportes-pdf`, { responseType: 'blob' })
 export const getCampanasStatsPorOrigen = () => client.get('/campanas/stats/por-origen')
 
 // ── Químicos ──────────────────────────────────────────────────────

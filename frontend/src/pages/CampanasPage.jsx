@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus, Users, Search, Calendar as CalendarIcon, CheckCircle, Clock, Edit2 } from 'lucide-react'
-import { getCampanas, createCampana, getCampanaPacientes, updateCampana } from '../api/client.js'
+import { Plus, Users, Search, Calendar as CalendarIcon, CheckCircle, Clock, Edit2, FileDown, Loader2 } from 'lucide-react'
+import { getCampanas, createCampana, getCampanaPacientes, updateCampana, descargarReportesPdfCampana } from '../api/client.js'
 import { useNotification } from '../context/NotificationContext.jsx'
 import LoadingSkeleton from '../components/LoadingSkeleton.jsx'
 import Modal from '../components/Modal.jsx'
@@ -30,6 +30,7 @@ export default function CampanasPage() {
   const [selectedCampana, setSelectedCampana] = useState(null)
   const [pacientes, setPacientes] = useState([])
   const [loadingPacientes, setLoadingPacientes] = useState(false)
+  const [downloadingPdfs, setDownloadingPdfs] = useState(false)
 
   const fetchCampanas = async () => {
     setLoading(true)
@@ -107,6 +108,43 @@ export default function CampanasPage() {
       notify.error('Error al cargar los pacientes de la campaña')
     } finally {
       setLoadingPacientes(false)
+    }
+  }
+
+  const handleDescargarPdfs = async (campana) => {
+    setDownloadingPdfs(true)
+    try {
+      const res = await descargarReportesPdfCampana(campana.id)
+
+      const disposition = res.headers['content-disposition'] || ''
+      const match = disposition.match(/filename="?([^"]+)"?/)
+      const filename = match ? match[1] : `Reportes_${campana.slug || campana.id}.zip`
+
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+
+      const sinReporte = parseInt(res.headers['x-pacientes-sin-reporte'] || '0', 10)
+      const incluidos = parseInt(res.headers['x-pacientes-incluidos'] || '0', 10)
+      if (sinReporte > 0) {
+        notify.info(`Se descargaron ${incluidos} PDF(s). ${sinReporte} paciente(s) de la campaña aún no tienen reporte generado.`)
+      } else {
+        notify.success(`Se descargaron ${incluidos} PDF(s) en un archivo ZIP.`)
+      }
+    } catch (err) {
+      const status = err.response?.status
+      if (status === 404) {
+        notify.error('Ningún paciente de esta campaña tiene un reporte PDF generado todavía.')
+      } else {
+        notify.error('Error al descargar los reportes PDF de la campaña')
+      }
+    } finally {
+      setDownloadingPdfs(false)
     }
   }
 
@@ -326,7 +364,25 @@ export default function CampanasPage() {
         title={`Pacientes - ${selectedCampana?.nombre}`}
         size="lg"
       >
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+        <div className="space-y-4">
+          {!loadingPacientes && pacientes.length > 0 && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => handleDescargarPdfs(selectedCampana)}
+                disabled={downloadingPdfs}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition disabled:opacity-60"
+              >
+                {downloadingPdfs ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileDown className="w-4 h-4" />
+                )}
+                Descargar PDFs (ZIP)
+              </button>
+            </div>
+          )}
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
           {loadingPacientes ? (
             <div className="space-y-2">
               <LoadingSkeleton className="h-12 w-full" />
@@ -365,6 +421,7 @@ export default function CampanasPage() {
               </table>
             </div>
           )}
+          </div>
         </div>
       </Modal>
     </div>

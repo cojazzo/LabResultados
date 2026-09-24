@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import get_current_user
 from app.database import get_db
-from app.models import Paciente, Prueba, Resultado, ReporteGenerado, User
+from app.models import Paciente, Prueba, Resultado, ReporteGenerado, User, CampanaPaciente
 from app.services.pdf_generator import generate_report_pdf, generate_batch_reports
 
 router = APIRouter(prefix="/reportes", tags=["Reportes PDF"])
@@ -80,6 +80,10 @@ async def exportar_excel(
         None,
         description="IDs de pruebas a incluir, separados por coma. Si se omite, se incluyen todas.",
     ),
+    campana_id: Optional[int] = Query(
+        None,
+        description="Si se especifica, limita el reporte a los pacientes inscritos en esa campaña.",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)):
     """
@@ -118,6 +122,11 @@ async def exportar_excel(
         stmt = stmt.where(Resultado.fecha_toma <= fecha_fin)
     if selected_prueba_ids:
         stmt = stmt.where(Resultado.prueba_id.in_(selected_prueba_ids))
+    if campana_id:
+        campana_pacientes_subq = select(CampanaPaciente.paciente_id).where(
+            CampanaPaciente.campana_id == campana_id
+        )
+        stmt = stmt.where(Resultado.paciente_id.in_(campana_pacientes_subq))
 
     res = await db.execute(stmt)
     resultados = res.scalars().all()

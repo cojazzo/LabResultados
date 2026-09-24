@@ -1,10 +1,15 @@
+import io
 import json
+import os
 import re
+import zipfile
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
+from sqlalchemy.orm import selectinload
 from app.database import get_db
-from app.models import Campana, CampanaPaciente, Paciente, Resultado, User
+from app.models import Campana, CampanaPaciente, Paciente, Resultado, ReporteGenerado, User
 from app.core.security import get_current_user
 from pydantic import BaseModel
 from typing import List, Optional
@@ -356,6 +361,85 @@ async def listar_pacientes_campana(
         ))
 
     return items
+
+
+@router.get("/{campana_id}/reportes-pdf")
+async def exportar_pdfs_campana(
+    campana_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Descarga un ZIP con los reportes PDF ya generados de los pacientes
+    inscritos en la campaña (el más reciente de cada paciente).
+    """
+    campana_res = await db.execute(select(Campana).where(Campana.id == campana_id))
+    campana = campana_res.scalar_one_or_none()
+    if not campana:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+
+    paciente_ids_res = await db.execute(
+        select(CampanaPaciente.paciente_id).where(CampanaPaciente.campana_id == campana_id)
+    )
+    paciente_ids = [r[0] for r in paciente_ids_res.all()]
+    if not paciente_ids:
+        raise HTTPException(status_code=404, detail="La campaña no tiene pacientes inscritos")
+
+    reportes_res = await db.execute(
+        select(ReporteGenerado)
+        .where(ReporteGenerado.paciente_id.in_(paciente_ids))
+        .options(selectinload(ReporteGenerado.paciente))
+        .order_by(ReporteGenerado.paciente_id, desc(ReporteGenerado.fecha_generacion))
+    )
+    reportes = reportes_res.scalars().all()
+
+    # Quedarnos con un solo reporte por paciente (el mas reciente; la query ya viene ordenada)
+    vistos = set()
+    reportes_unicos = []
+    for r in reportes:
+        if r.paciente_id in vistos:
+            continue
+        vistos.add(r.paciente_id)
+        reportes_unicos.append(r)
+
+    if not reportes_unicos:
+        raise HTTPException(
+            status_code=404,
+            detail="Ningún paciente de esta campaña tiene un reporte PDF generado todavía"
+        )
+
+    zip_buffer = io.BytesIO()
+    incluidos = 0
+    faltantes = 0
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for r in reportes_unicos:
+            if not r.ruta_archivo or not os.path.isfile(r.ruta_archivo):
+                faltantes += 1
+                continue
+            pac = r.paciente
+            apellido = (pac.apellido or "").strip().replace(" ", "_") if pac else ""
+            nombre = (pac.nombre or "").strip().replace(" ", "_") if pac else ""
+            nombre_archivo = f"{r.folio}_{apellido}_{nombre}.pdf".strip("_")
+            zf.write(r.ruta_archivo, arcname=nombre_archivo)
+            incluidos += 1
+
+    if incluidos == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Los reportes de esta campaña no tienen archivo PDF disponible en el servidor"
+        )
+
+    zip_buffer.seek(0)
+    slug = campana.slug or f"campana-{campana.id}"
+    filename = f"Reportes_{slug}_{date.today().isoformat()}.zip"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Access-Control-Expose-Headers": "X-Pacientes-Sin-Reporte, X-Pacientes-Incluidos",
+        "X-Pacientes-Sin-Reporte": str(faltantes),
+        "X-Pacientes-Incluidos": str(incluidos),
+    }
+    return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
 
 @router.post("/{campana_id}/pacientes")
