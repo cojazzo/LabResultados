@@ -14,7 +14,13 @@ from sqlalchemy.orm import selectinload
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models import Paciente, Prueba, Resultado, ReporteGenerado, User, CampanaPaciente
-from app.services.pdf_generator import generate_report_pdf, generate_batch_reports
+from app.services.pdf_generator import (
+    generate_report_pdf,
+    generate_batch_reports,
+    calculate_egfr,
+    get_kdigo_classification,
+    resolve_sex,
+)
 
 router = APIRouter(prefix="/reportes", tags=["Reportes PDF"])
 
@@ -37,6 +43,16 @@ TAMIZAJE_FIELD_MAP: dict[str, str | None] = {
 }
 
 ALL_TAMIZAJE_COLS = list(TAMIZAJE_FIELD_MAP.keys())
+
+# Pruebas de función renal: siempre van al final del Excel, en este orden fijo,
+# seguidas de la TFG (CKD-EPI 2021) y el estadio KDIGO calculados.
+KIDNEY_CODE_LABELS: dict[str, str] = {
+    "ALBOR": "ALBOR",
+    "CRE01": "CRETU",
+    "ACR":   "ACR",
+    "CRTS":  "CRTS",
+}
+KIDNEY_CALC_COLS = ["TFG", "KDIGO"]
 
 
 def _build_excel_stream(df: pd.DataFrame, sheet_name: str = "Reporte") -> io.BytesIO:
@@ -132,7 +148,9 @@ async def exportar_excel(
     resultados = res.scalars().all()
 
     if not resultados:
-        df_empty = pd.DataFrame(columns=selected_tamizaje + ["Fecha Visita"])
+        df_empty = pd.DataFrame(
+            columns=selected_tamizaje + ["Fecha Visita"] + list(KIDNEY_CODE_LABELS.values()) + KIDNEY_CALC_COLS
+        )
         output = _build_excel_stream(df_empty)
         filename = _build_filename(fecha_inicio, fecha_fin)
         return StreamingResponse(
@@ -148,9 +166,14 @@ async def exportar_excel(
     pacientes_map: dict[int, Paciente] = {p.id: p for p in res_pac.scalars().all()}
 
     # ── 3. Columnas de pruebas en orden consistente (alfabético por nombre) ──
+    # Las pruebas de función renal (ALBOR/CRE01/ACR/CRTS) no van aquí: se
+    # colocan al final, en un orden fijo, junto con TFG y KDIGO.
     prueba_cols_ordered: list[str] = []
     seen: set[str] = set()
     for r in sorted(resultados, key=lambda x: x.prueba.nombre):
+        codigo = (r.prueba.codigo or "").upper()
+        if codigo in KIDNEY_CODE_LABELS:
+            continue
         label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
         if label not in seen:
             seen.add(label)
@@ -158,8 +181,15 @@ async def exportar_excel(
 
     # ── 4. Agrupar resultados por (paciente_id, fecha_toma) ──────────────
     visitas: dict[tuple, dict] = defaultdict(dict)
+    visitas_renal: dict[tuple, dict] = defaultdict(dict)  # valores numéricos crudos para TFG/KDIGO
     for r in resultados:
-        label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
+        codigo = (r.prueba.codigo or "").upper()
+        if codigo in KIDNEY_CODE_LABELS:
+            label = KIDNEY_CODE_LABELS[codigo]
+            if r.valor is not None:
+                visitas_renal[(r.paciente_id, r.fecha_toma)][codigo] = float(r.valor)
+        else:
+            label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
         val = float(r.valor) if r.valor is not None else (r.valor_texto or "")
         visitas[(r.paciente_id, r.fecha_toma)][label] = val
 
@@ -200,10 +230,50 @@ async def exportar_excel(
         for col in prueba_cols_ordered:
             row[col] = visita_vals.get(col, "")
 
+        for label in KIDNEY_CODE_LABELS.values():
+            row[label] = visita_vals.get(label, "")
+
+        # TFG (CKD-EPI 2021) y estadio KDIGO calculados a partir de CRTS y ACR
+        renal = visitas_renal.get((pac_id, fecha_toma), {})
+        crts = renal.get("CRTS")
+        albor = renal.get("ALBOR")
+        cre01 = renal.get("CRE01")
+        acr = renal.get("ACR")
+        if acr is None and albor is not None and cre01 is not None and cre01 > 0:
+            acr = (albor / cre01) * 100
+
+        egfr = None
+        if crts is not None and crts > 0:
+            dob = paciente.fecha_nacimiento
+            if dob:
+                age = fecha_toma.year - dob.year - ((fecha_toma.month, fecha_toma.day) < (dob.month, dob.day))
+            else:
+                age = 45
+            is_female = resolve_sex(paciente)
+            height_cm = float(paciente.estatura) if paciente.estatura is not None else None
+            try:
+                egfr, _ = calculate_egfr(crts, age, is_female, height_cm)
+            except (ValueError, ZeroDivisionError):
+                egfr = None
+
+        kdigo = get_kdigo_classification(egfr, acr)
+        row["TFG"] = round(egfr, 1) if egfr is not None else ""
+        if kdigo["g_cat"] and kdigo["a_cat"]:
+            row["KDIGO"] = f"{kdigo['g_cat']}{kdigo['a_cat']} - {kdigo['riesgo']}"
+        elif kdigo["a_cat"]:
+            row["KDIGO"] = f"{kdigo['a_cat']} - {kdigo['riesgo']}"
+        else:
+            row["KDIGO"] = ""
+
         rows.append(row)
 
     # ── 6. Generar Excel en memoria ───────────────────────────────────────
     df = pd.DataFrame(rows)
+    columnas_finales = (
+        selected_tamizaje + ["Fecha Visita"] + prueba_cols_ordered
+        + list(KIDNEY_CODE_LABELS.values()) + KIDNEY_CALC_COLS
+    )
+    df = df.reindex(columns=columnas_finales)
     output = _build_excel_stream(df)
     filename = _build_filename(fecha_inicio, fecha_fin)
     return StreamingResponse(
