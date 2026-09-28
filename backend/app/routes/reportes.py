@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models import Paciente, Prueba, Resultado, ReporteGenerado, User, CampanaPaciente
+from app.utils.validators import nombre_completo_paciente
 from app.services.pdf_generator import (
     generate_report_pdf,
     generate_batch_reports,
@@ -331,7 +332,7 @@ async def generar_reporte(
         res = await db.execute(stmt)
         rep_full = res.scalar_one_or_none()
         
-        pac_nombre = f"{rep_full.paciente.nombre} {rep_full.paciente.apellido}" if rep_full.paciente else "Desconocido"
+        pac_nombre = nombre_completo_paciente(rep_full.paciente) if rep_full.paciente else "Desconocido"
         
         return ReporteResponse(
             id=rep_full.id,
@@ -380,7 +381,7 @@ async def generar_reporte_masivo(
             res = await db.execute(stmt)
             rep_full = res.scalar_one_or_none()
             
-            pac_nombre = f"{rep_full.paciente.nombre} {rep_full.paciente.apellido}" if rep_full.paciente else "Desconocido"
+            pac_nombre = nombre_completo_paciente(rep_full.paciente) if rep_full.paciente else "Desconocido"
             
             response_list.append(
                 ReporteResponse(
@@ -423,7 +424,7 @@ async def get_reportes(
     
     response_list = []
     for r in reportes:
-        pac_nombre = f"{r.paciente.nombre} {r.paciente.apellido}" if r.paciente else "Desconocido"
+        pac_nombre = nombre_completo_paciente(r.paciente) if r.paciente else "Desconocido"
         response_list.append(
             ReporteResponse(
                 id=r.id,
@@ -512,7 +513,7 @@ async def buscar_por_telefono(
     if not reporte:
         raise HTTPException(status_code=404, detail="El paciente no tiene reportes generados")
 
-    pac_nombre = f"{paciente.nombre} {paciente.apellido}"
+    pac_nombre = nombre_completo_paciente(paciente)
     pdf_url = f"{settings.BASE_URL}/storage/pdfs/{reporte.folio}.pdf"
 
     return ReporteBusquedaResponse(

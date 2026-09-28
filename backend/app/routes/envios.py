@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Envio, User, ReporteGenerado
 from app.core.security import get_current_user, get_current_user_or_system
+from app.utils.validators import nombre_completo_paciente
 from app.services.email_sender import send_report_email
 from app.services.whatsapp_sender import send_report_whatsapp
 from datetime import datetime, timedelta
@@ -341,7 +342,7 @@ async def preparar_envios(
         await db.refresh(envio)
         
         pdf_filename = os.path.basename(reporte.ruta_archivo) if reporte.ruta_archivo else f"{reporte.folio}.pdf"
-        nombre_dest = f"{paciente.nombre} {paciente.apellido}".strip()
+        nombre_dest = nombre_completo_paciente(paciente)
         
         response_list.append(
             EnvioPreparadoResponse(

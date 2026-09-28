@@ -15,6 +15,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.models import ReporteGenerado, ReporteResultado, Resultado, Paciente, User
+from app.utils.validators import nombre_completo_paciente
 
 # Importar ReportLab para generación local sin dependencias de sistema C
 from reportlab.lib.pagesizes import letter
@@ -311,7 +312,7 @@ def generate_reportlab_pdf(pdf_path, context):
             ""
         ],
         [
-            Paragraph(f"<b>Nombre:</b> {paciente.nombre} {paciente.apellido}", body_style),
+            Paragraph(f"<b>Nombre:</b> {nombre_completo_paciente(paciente)}", body_style),
             Paragraph(f"<b>Identificación/CURP:</b> {paciente.identificacion}", body_style)
         ],
         [

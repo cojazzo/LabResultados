@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.models import ReporteGenerado, Envio
+from app.utils.validators import nombre_completo_paciente
 
 settings = get_settings()
 
@@ -25,7 +26,7 @@ async def send_report_whatsapp(db: AsyncSession, reporte_id: int, destinatario_w
         raise ValueError(f"Reporte con ID {reporte_id} no encontrado")
 
     paciente = reporte.paciente
-    paciente_nombre = f"{paciente.nombre} {paciente.apellido}"
+    paciente_nombre = nombre_completo_paciente(paciente)
 
     # Normalizar número de teléfono (debe iniciar con whatsapp:+...)
     dest = destinatario_whatsapp.strip()

@@ -333,7 +333,7 @@ async def _resolve_paciente(
         if not resultado_ref:
             return None, (
                 f"No existe ningún registro con Petición No. {id_peticion} "
-                "(ID de UC-1000: '{raw_id}'). "
+                f"(ID de UC-1000: '{raw_id}'). "
                 "Sube primero el Excel del Vitros para registrar al paciente."
             )
 

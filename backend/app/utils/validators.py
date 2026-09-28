@@ -101,6 +101,11 @@ def calcular_interpretacion(
 
     return "normal"
 
+def nombre_completo_paciente(paciente) -> str:
+    """Nombre completo de un paciente, incluyendo apellido materno cuando existe."""
+    partes = [paciente.nombre, paciente.apellido, paciente.apellido_materno]
+    return " ".join(p.strip() for p in partes if p and p.strip())
+
 def interpretar_valor_texto(valor_texto: str | None) -> str:
     """
     Interpreta resultados no numéricos que quedan fuera del rango medible
