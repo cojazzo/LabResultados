@@ -35,6 +35,9 @@ from sqlalchemy import select
 
 from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
+from app.services.tamiz_sync import (
+    normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
+)
 
 # ---------------------------------------------------------------------------
 # Constantes de mapeo por ÍNDICE de columna (0-based)
@@ -305,6 +308,14 @@ async def _resolve_paciente(
     if not raw_id:
         return None, "ID de paciente vacío"
 
+    # ── Caso 0: folio de tamiz-escolar (letra + 8 dígitos, ej. S26136937) ──
+    folio = normalizar_folio(raw_id)
+    if folio:
+        paciente = await resolver_folio(db, folio)
+        if not paciente:
+            return None, mensaje_folio_desconocido(folio)
+        return paciente, None
+
     # ── Caso 1: CURP (18 caracteres) ──────────────────────────────────────
     if len(raw_id) == CURP_LEN:
         pac_res = await db.execute(
@@ -505,6 +516,11 @@ async def process_uc1000_csv(
             })
             erroneos += 1
             continue
+
+        # Muestras de campaña escolar (folio de tamiz): la fecha de toma es la fecha de evaluación
+        # en tamiz, para que la tira y la confirmación de Vitros caigan en la misma visita.
+        if normalizar_folio(id_valor):
+            fecha_toma = await fecha_toma_tamiz(db, paciente, fecha_toma)
 
         # Parsear valores numéricos
         alb_num   = _parse_numeric(alb_raw)

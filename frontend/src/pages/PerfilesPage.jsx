@@ -15,24 +15,25 @@ export default function PerfilesPage() {
   const [totalItems, setTotalItems] = useState(0)
   const limit = 20
 
+  // La búsqueda se hace en el servidor (hay decenas de miles de pacientes); se espera a que se
+  // deje de escribir y se regresa a la página 1 cuando cambia el texto.
   useEffect(() => {
-    fetchPacientes()
-  }, [currentPage])
+    setCurrentPage(1)
+  }, [searchTerm])
+
+  useEffect(() => {
+    const t = setTimeout(fetchPacientes, searchTerm ? 300 : 0)
+    return () => clearTimeout(t)
+  }, [currentPage, searchTerm])
 
   const fetchPacientes = async () => {
     try {
       setLoading(true)
-      // Usaremos el endpoint actual de pacientes (que debemos asumir que existe o crear)
-      // Si no existe, podemos listarlos usando el router existente.
-      const res = await api.get(`/pacientes?page=${currentPage}&limit=${limit}`)
-      // Asumiendo que retorna { items: [], total: x }
-      if (Array.isArray(res.data)) {
-        setPacientes(res.data)
-        setTotalItems(res.data.length * 2) // mock si no hay count real
-      } else {
-        setPacientes(res.data.items || [])
-        setTotalItems(res.data.total || 0)
-      }
+      const res = await api.get('/pacientes', {
+        params: { page: currentPage, limit, search: searchTerm.trim() || undefined },
+      })
+      setPacientes(res.data || [])
+      setTotalItems(parseInt(res.headers['x-total-count'] || '0', 10))
     } catch (error) {
       console.error('Error cargando pacientes:', error)
     } finally {
@@ -40,11 +41,7 @@ export default function PerfilesPage() {
     }
   }
 
-  // Filtrado local simple por nombre/identificacion
-  const filteredPacientes = pacientes.filter(p => 
-    (p.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.identificacion || '').toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredPacientes = pacientes
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -100,6 +97,9 @@ export default function PerfilesPage() {
                     </h3>
                     <p className="text-sm text-slate-500 flex gap-2">
                       <span className="font-mono bg-slate-100 px-1.5 rounded">{paciente.identificacion}</span>
+                      {paciente.folio_tamiz && (
+                        <span className="font-mono bg-emerald-50 text-emerald-700 px-1.5 rounded">{paciente.folio_tamiz}</span>
+                      )}
                       {paciente.email && <span>• {paciente.email}</span>}
                     </p>
                   </div>

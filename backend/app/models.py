@@ -50,6 +50,11 @@ class Paciente(Base):
     # --- Clasificación por origen ---
     origen = Column(String, default="servicio_externo", nullable=True)  # secundaria | servicio_externo | campana_externa
     # ---------------------------------
+    # --- Integración con tamiz-escolar ---
+    # Folio estable del alumno en tamiz (letra + 8 dígitos). Es el ID que lleva la tira UC-1000
+    # y el Excel de Vitros en las muestras de la campaña escolar.
+    folio_tamiz = Column(String, unique=True, index=True, nullable=True)
+    # -------------------------------------
     # --- Geocoordinadas (Nominatim / OpenStreetMap) ---
     lat = Column(Numeric(precision=9, scale=6), nullable=True)
     lon = Column(Numeric(precision=9, scale=6), nullable=True)

@@ -10,6 +10,7 @@ from app.utils.validators import normalize_column_name, parse_date, validate_ema
 from app.utils.curp_validator import match_patient_identifier
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
+from app.services.tamiz_sync import normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz
 
 async def process_excel_file(db: AsyncSession, file_content: bytes, filename: str, usuario_id: int) -> Lote:
     """
@@ -360,19 +361,32 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             total_filas -= 1
             continue
 
-        # Identificación del Paciente con lógica de matching
-        paciente_id_val = match_patient_identifier(nts_raw, nombre_raw, apellidos_raw, sexo_raw)
-        
-        if not paciente_id_val:
-            if numero_raw:
-                paciente_id_val = f"NTS-{numero_raw}"
-            else:
-                fila_errores.append({"columna": "NTS", "error": "No se pudo identificar al paciente (NTS y Número vacíos)", "valor": ""})
+        # Muestras de campaña escolar: el "Número" es el folio de tamiz-escolar y el paciente se
+        # resuelve por folio (no por nombre).
+        folio_tamiz = normalizar_folio(numero_raw)
+        paciente_tamiz = None
+        if folio_tamiz:
+            paciente_tamiz = await resolver_folio(db, folio_tamiz)
+            if not paciente_tamiz:
+                errors.append({"fila": fila_num, "columna": "Número",
+                               "error": mensaje_folio_desconocido(folio_tamiz), "valor": numero_raw})
+                erroneos += 1
+                continue
 
-        if not nombre_raw:
-            fila_errores.append({"columna": "Nombre_Paciente", "error": "El nombre del paciente es obligatorio", "valor": ""})
-        if not apellidos_raw:
-            fila_errores.append({"columna": "Apellidos", "error": "Los apellidos del paciente son obligatorios", "valor": ""})
+        if not paciente_tamiz:
+            # Identificación del Paciente con lógica de matching
+            paciente_id_val = match_patient_identifier(nts_raw, nombre_raw, apellidos_raw, sexo_raw)
+
+            if not paciente_id_val:
+                if numero_raw:
+                    paciente_id_val = f"NTS-{numero_raw}"
+                else:
+                    fila_errores.append({"columna": "NTS", "error": "No se pudo identificar al paciente (NTS y Número vacíos)", "valor": ""})
+
+            if not nombre_raw:
+                fila_errores.append({"columna": "Nombre_Paciente", "error": "El nombre del paciente es obligatorio", "valor": ""})
+            if not apellidos_raw:
+                fila_errores.append({"columna": "Apellidos", "error": "Los apellidos del paciente son obligatorios", "valor": ""})
 
         # Procesar fecha de toma (fecha de la visita)
         fecha_toma_val = parse_date(fecha_raw) if fecha_raw else None
@@ -385,26 +399,32 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             erroneos += 1
             continue
 
-        # Upsert Paciente
-        paciente_res = await db.execute(select(Paciente).where(Paciente.identificacion == paciente_id_val))
-        paciente = paciente_res.scalar_one_or_none()
-        pac_nac = parse_date(nac_raw) if nac_raw else None
-        
-        if not paciente:
-            paciente = Paciente(
-                identificacion=paciente_id_val,
-                nombre=nombre_raw,
-                apellido=apellidos_raw,
-                fecha_nacimiento=pac_nac,
-                sexo=sexo_raw
-            )
-            db.add(paciente)
-            await db.flush()
+        if paciente_tamiz:
+            # Alumno de campaña escolar: datos demográficos los manda tamiz; la fecha de toma es la
+            # fecha de evaluación (para que Vitros y la tira queden en la misma visita).
+            paciente = paciente_tamiz
+            fecha_toma_val = await fecha_toma_tamiz(db, paciente, fecha_toma_val)
         else:
-            if nombre_raw: paciente.nombre = nombre_raw
-            if apellidos_raw: paciente.apellido = apellidos_raw
-            if pac_nac: paciente.fecha_nacimiento = pac_nac
-            if sexo_raw: paciente.sexo = sexo_raw
+            # Upsert Paciente
+            paciente_res = await db.execute(select(Paciente).where(Paciente.identificacion == paciente_id_val))
+            paciente = paciente_res.scalar_one_or_none()
+            pac_nac = parse_date(nac_raw) if nac_raw else None
+
+            if not paciente:
+                paciente = Paciente(
+                    identificacion=paciente_id_val,
+                    nombre=nombre_raw,
+                    apellido=apellidos_raw,
+                    fecha_nacimiento=pac_nac,
+                    sexo=sexo_raw
+                )
+                db.add(paciente)
+                await db.flush()
+            else:
+                if nombre_raw: paciente.nombre = nombre_raw
+                if apellidos_raw: paciente.apellido = apellidos_raw
+                if pac_nac: paciente.fecha_nacimiento = pac_nac
+                if sexo_raw: paciente.sexo = sexo_raw
 
         # Procesar columnas de pruebas
         fila_exitosos = 0

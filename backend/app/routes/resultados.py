@@ -45,6 +45,7 @@ class PacienteInfo(BaseModel):
     cocina_agua_llave: Optional[str] = None
     padecimientos: Optional[str] = None
     origen: Optional[str] = None
+    folio_tamiz: Optional[str] = None
 
 class ResultadoResponse(BaseModel):
     id: int
@@ -110,7 +111,8 @@ async def get_resultados(
                     Paciente.nombre.ilike(term_filter),
                     Paciente.apellido.ilike(term_filter),
                     Paciente.apellido_materno.ilike(term_filter),
-                    Paciente.identificacion.ilike(term_filter)
+                    Paciente.identificacion.ilike(term_filter),
+                    Paciente.folio_tamiz.ilike(term_filter)
                 )
             )
         conditions.append(
@@ -295,30 +297,44 @@ async def get_resultado(
 
 @router.get("/pacientes", response_model=List[PacienteInfo])
 async def get_pacientes(
-    search: str = Query("", description="Búsqueda por nombre, apellido o identificación"),
+    response: Response,
+    search: str = Query("", description="Búsqueda por nombre, apellido, identificación o folio de tamiz"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Obtiene el listado de pacientes con opción de búsqueda.
+    Obtiene el listado de pacientes paginado, con opción de búsqueda.
+    El total de coincidencias viene en el encabezado X-Total-Count.
     """
-    stmt = select(Paciente)
+    conditions = []
     if search:
-        search_terms = search.strip().split()
-        for term in search_terms:
+        for term in search.strip().split():
             term_filter = f"%{term}%"
-            stmt = stmt.where(
+            conditions.append(
                 or_(
                     Paciente.nombre.ilike(term_filter),
                     Paciente.apellido.ilike(term_filter),
                     Paciente.apellido_materno.ilike(term_filter),
-                    Paciente.identificacion.ilike(term_filter)
+                    Paciente.identificacion.ilike(term_filter),
+                    Paciente.folio_tamiz.ilike(term_filter),
                 )
             )
-    stmt = stmt.order_by(Paciente.apellido, Paciente.nombre)
+
+    total = (await db.execute(select(func.count(Paciente.id)).where(and_(*conditions)))).scalar() or 0
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
+
+    stmt = (
+        select(Paciente)
+        .where(and_(*conditions))
+        .order_by(Paciente.apellido, Paciente.nombre, Paciente.id)
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
-    pacientes = result.scalars().all()
-    return pacientes
+    return result.scalars().all()
 
 @router.get("/pacientes/{id}/resultados", response_model=List[ResultadoResponse])
 async def get_paciente_resultados(
