@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models import Base, Campana, CampanaPaciente, Lote, Paciente, Prueba, Resultado, User
+from app.models import (
+    Base, Campana, CampanaPaciente, Lote, Paciente, Prueba, ReporteGenerado, ReporteResultado, Resultado, User,
+)
 from app.services.excel_parser import process_horizontal_excel
 from app.services.tamiz_sync import (
     fecha_toma_tamiz, normalizar_folio, resolver_folio, sincronizar_alumnos,
@@ -315,8 +317,14 @@ async def test_unifica_duplicado_creado_con_folio_como_identificacion(db):
     db.add(lote)
     await db.flush()
     crtn = (await db.execute(select(Prueba).where(Prueba.codigo == "CRE01"))).scalar_one()
-    db.add(Resultado(lote_id=lote.id, paciente_id=dup.id, prueba_id=crtn.id, valor=120, interpretacion="normal",
-                     fecha_toma=date(2026, 10, 27), fecha_resultado=date(2026, 10, 27), fuente="vitros"))
+    res_dup = Resultado(lote_id=lote.id, paciente_id=dup.id, prueba_id=crtn.id, valor=120, interpretacion="normal",
+                        fecha_toma=date(2026, 10, 27), fecha_resultado=date(2026, 10, 27), fuente="vitros")
+    db.add(res_dup)
+    await db.flush()
+    rep = ReporteGenerado(paciente_id=dup.id, lote_id=lote.id, folio="REP-T-1", ruta_archivo="x.pdf")
+    db.add(rep)
+    await db.flush()
+    db.add(ReporteResultado(reporte_id=rep.id, resultado_id=res_dup.id))
     await db.commit()
 
     cuenta, _ = await unificar(db, imprimir=lambda *_: None)
@@ -330,3 +338,9 @@ async def test_unifica_duplicado_creado_con_folio_como_identificacion(db):
     assert v[("ALBOR", date(2026, 10, 19))] == (30.0, "tira_uc1000")
     assert v[("ACR", date(2026, 10, 19))][0] == pytest.approx(25.0)
     assert not any(f != date(2026, 10, 19) for (_, f) in v)
+    # el reporte ya generado pasó al paciente del padrón y apunta a un resultado que existe
+    await db.refresh(rep)
+    assert rep.paciente_id == real.id
+    rr = (await db.execute(select(ReporteResultado).where(ReporteResultado.reporte_id == rep.id))).scalar_one()
+    destino = (await db.execute(select(Resultado).where(Resultado.id == rr.resultado_id))).scalar_one()
+    assert destino.paciente_id == real.id and destino.fuente == "vitros"

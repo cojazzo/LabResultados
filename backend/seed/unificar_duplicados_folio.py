@@ -10,7 +10,8 @@ paciente del padrón con ese folio_tamiz:
     el que ya estaba en el paciente del padrón;
   - se recalcula el ACR de cada visita afectada;
   - se elimina el paciente duplicado.
-No toca duplicados que tengan reportes generados (los lista para revisarlos a mano).
+Los reportes ya generados del duplicado pasan al paciente del padrón (con sus resultados reapuntados al
+resultado que se conserva); quedan con el contenido de cuando se generaron y se actualizan al regenerarlos.
 
 Uso (dentro del contenedor del backend):
     python seed/unificar_duplicados_folio.py            # simulación: lista y hace rollback
@@ -26,10 +27,10 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import delete, select  # noqa: E402
+from sqlalchemy import delete, select, update  # noqa: E402
 
 from app.database import AsyncSessionLocal  # noqa: E402
-from app.models import CampanaPaciente, Paciente, Prueba, ReporteGenerado, Resultado  # noqa: E402
+from app.models import CampanaPaciente, Paciente, Prueba, ReporteGenerado, ReporteResultado, Resultado  # noqa: E402
 from app.services.tamiz_sync import fecha_toma_tamiz  # noqa: E402
 from app.services.uc1000_parser import (  # noqa: E402
     CODIGO_ACR, CODIGO_ALB, CODIGO_CRE, FUENTE_VITROS, calculate_acr_for_patient,
@@ -46,6 +47,11 @@ def _fila(r: Resultado) -> dict:
         "interpretacion": r.interpretacion, "fecha_toma": str(r.fecha_toma), "fuente": r.fuente,
         "observaciones": r.observaciones,
     }
+
+
+async def _reapuntar_reportes(db, resultado_viejo: int, resultado_nuevo: int):
+    await db.execute(update(ReporteResultado).where(ReporteResultado.resultado_id == resultado_viejo)
+                     .values(resultado_id=resultado_nuevo))
 
 
 async def unificar(db, imprimir=print):
@@ -67,16 +73,13 @@ async def unificar(db, imprimir=print):
             cuenta["sin paciente en el padrón (se deja igual)"] += 1
             imprimir(f"  {dup.identificacion}: no existe en el padrón, se deja igual")
             continue
-        if (await db.execute(select(ReporteGenerado.id).where(ReporteGenerado.paciente_id == dup.id)
-                             .limit(1))).first():
-            cuenta["con reportes generados (revisar a mano)"] += 1
-            imprimir(f"  {dup.identificacion}: el duplicado (id {dup.id}) tiene reportes, se omite")
-            continue
+        reportes = (await db.execute(
+            select(ReporteGenerado.id).where(ReporteGenerado.paciente_id == dup.id))).scalars().all()
 
         resultados = (await db.execute(select(Resultado).where(Resultado.paciente_id == dup.id))).scalars().all()
         respaldo.append({"duplicado": {"id": dup.id, "identificacion": dup.identificacion, "nombre": dup.nombre,
                                        "apellido": dup.apellido, "paciente_destino_id": real_p.id},
-                         "resultados": [_fila(r) for r in resultados]})
+                         "resultados": [_fila(r) for r in resultados], "reportes": list(reportes)})
         visitas = set()
         for r in resultados:
             destino = await fecha_toma_tamiz(db, real_p, r.fecha_toma)
@@ -89,9 +92,11 @@ async def unificar(db, imprimir=print):
             elif r.fuente == FUENTE_VITROS and existente.fuente != FUENTE_VITROS:
                 for campo in ("valor", "valor_texto", "interpretacion", "fuente", "lote_id", "observaciones"):
                     setattr(existente, campo, getattr(r, campo))
+                await _reapuntar_reportes(db, r.id, existente.id)
                 await db.delete(r)
                 cuenta["Vitros reemplaza a tira"] += 1
             else:
+                await _reapuntar_reportes(db, r.id, existente.id)
                 await db.delete(r)
                 cuenta["resultado repetido descartado"] += 1
             visitas.add(destino)
@@ -103,6 +108,10 @@ async def unificar(db, imprimir=print):
                     db, real_p.id, fecha, resultados[0].lote_id if resultados else None,
                     pruebas[CODIGO_ALB], pruebas[CODIGO_CRE], pruebas[CODIGO_ACR])
 
+        if reportes:
+            await db.execute(update(ReporteGenerado).where(ReporteGenerado.paciente_id == dup.id)
+                             .values(paciente_id=real_p.id))
+            cuenta["reportes pasados al paciente del padrón"] += len(reportes)
         await db.execute(delete(CampanaPaciente).where(CampanaPaciente.paciente_id == dup.id))
         await db.delete(dup)
         await db.flush()
