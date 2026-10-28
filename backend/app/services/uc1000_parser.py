@@ -21,6 +21,9 @@ Jerarquía de fuentes:
 
 Fórmula ACR:
   ACR (mg/g) = (Albúmina mg/L ÷ Creatinina mg/dL) × 100
+
+  Si la albúmina de la tira sale "Over" (> 150 mg/L) no hay ACR exacto: se guarda la cota
+  inferior (">X") para que el caso salga como positivo (≥ A2). Ver app/utils/acr.py.
 """
 
 import io
@@ -35,6 +38,7 @@ from sqlalchemy import select
 
 from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
+from app.utils.acr import cota_acr, texto_cota, observacion_cota
 from app.services.tamiz_sync import (
     normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
 )
@@ -226,25 +230,34 @@ async def calculate_acr_for_patient(
 
     if not alb_res or not cre_res:
         return None
-    if alb_res.valor is None or cre_res.valor is None:
+    if cre_res.valor is None:
         return None
 
-    alb_val = float(alb_res.valor)  # mg/L
     cre_val = float(cre_res.valor)  # mg/dL
-
     if cre_val <= 0:
         return None
 
-    # ACR = (Alb mg/L ÷ (Creat mg/dL * 10 mg/L)) * 1000 mg/g = (Alb ÷ Creat) * 100
-    acr_val = (alb_val / cre_val) * 100
+    valor_texto_acr: Optional[str] = None
+    if alb_res.valor is not None:
+        alb_val = float(alb_res.valor)  # mg/L
+        # ACR = (Alb mg/L ÷ (Creat mg/dL * 10 mg/L)) * 1000 mg/g = (Alb ÷ Creat) * 100
+        acr_val = (alb_val / cre_val) * 100
+        obs = f"Calculado: ALB({alb_res.fuente}) / CRE({cre_res.fuente})"
+    elif alb_res.fuente == FUENTE_TIRA and "over" in (alb_res.valor_texto or "").lower():
+        # Albúmina por arriba del rango de la tira: no hay ACR exacto, solo una cota inferior.
+        acr_val = cota_acr(cre_val)
+        if acr_val is None:
+            return None  # creatinina diluida (≤10 mg/dL): repetir la muestra
+        valor_texto_acr = texto_cota(acr_val)
+        obs = observacion_cota(cre_val, acr_val)
+    else:
+        return None
 
     # La fuente del ACR refleja la fuente menos confiable de los dos valores
     if alb_res.fuente == FUENTE_VITROS and cre_res.fuente == FUENTE_VITROS:
         fuente_acr = FUENTE_VITROS
     else:
         fuente_acr = FUENTE_TIRA
-
-    obs = f"Calculado: ALB({alb_res.fuente}) / CRE({cre_res.fuente})"
 
     acr_stmt = select(Resultado).where(
         Resultado.paciente_id == paciente_id,
@@ -262,6 +275,7 @@ async def calculate_acr_for_patient(
 
     if existing_acr:
         existing_acr.valor        = acr_decimal
+        existing_acr.valor_texto  = valor_texto_acr
         existing_acr.lote_id      = lote_id
         existing_acr.fuente       = fuente_acr
         existing_acr.interpretacion = interpretacion
@@ -272,6 +286,7 @@ async def calculate_acr_for_patient(
             paciente_id   = paciente_id,
             prueba_id     = prueba_acr.id,
             valor         = acr_decimal,
+            valor_texto   = valor_texto_acr,
             interpretacion = interpretacion,
             fecha_toma    = fecha_toma,
             fecha_resultado = fecha_toma,
@@ -576,8 +591,8 @@ async def process_uc1000_csv(
             })
             fila_ok = False
 
-        # Calcular ACR solo si hay datos suficientes
-        if alb_num is not None and cre_num is not None:
+        # Calcular ACR solo si hay datos suficientes (ALB en "over" da una cota inferior, no un valor exacto)
+        if cre_num is not None and (alb_num is not None or alb_over):
             await calculate_acr_for_patient(
                 db          = db,
                 paciente_id = paciente.id,

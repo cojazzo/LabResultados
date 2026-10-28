@@ -391,7 +391,7 @@ export default function DashboardPage() {
                       <div className="text-[10px] text-slate-400 uppercase">{r.prueba.codigo}</div>
                     </td>
                     <td className="py-3 font-bold font-mono">
-                      {r.valor !== null ? `${r.valor} ${r.prueba.unidad}` : r.valor_texto}
+                      {r.valor !== null && !r.valor_texto?.startsWith('>') ? `${r.valor} ${r.prueba.unidad}` : `${r.valor_texto} ${r.valor_texto?.startsWith('>') ? r.prueba.unidad : ''}`}
                     </td>
                     <td className="py-3">
                       <Badge variant={r.interpretacion} />

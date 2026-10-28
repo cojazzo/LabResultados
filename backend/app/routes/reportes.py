@@ -15,6 +15,7 @@ from app.core.security import get_current_user
 from app.database import get_db
 from app.models import Paciente, Prueba, Resultado, ReporteGenerado, User, CampanaPaciente
 from app.utils.validators import nombre_completo_paciente
+from app.utils.acr import es_cota
 from app.services.pdf_generator import (
     generate_report_pdf,
     generate_batch_reports,
@@ -189,9 +190,13 @@ async def exportar_excel(
             label = KIDNEY_CODE_LABELS[codigo]
             if r.valor is not None:
                 visitas_renal[(r.paciente_id, r.fecha_toma)][codigo] = float(r.valor)
+                if codigo == "ACR" and es_cota(r.valor_texto):
+                    visitas_renal[(r.paciente_id, r.fecha_toma)]["ACR_COTA"] = True
         else:
             label = f"{r.prueba.nombre} ({r.prueba.unidad})" if r.prueba.unidad else r.prueba.nombre
         val = float(r.valor) if r.valor is not None else (r.valor_texto or "")
+        if codigo == "ACR" and es_cota(r.valor_texto):
+            val = r.valor_texto  # cota inferior (">150"): no se exporta como si fuera un valor exacto
         visitas[(r.paciente_id, r.fecha_toma)][label] = val
 
     # ── 5. Construir filas: una por (paciente, fecha_visita) ─────────────
@@ -257,12 +262,12 @@ async def exportar_excel(
             except (ValueError, ZeroDivisionError):
                 egfr = None
 
-        kdigo = get_kdigo_classification(egfr, acr)
+        kdigo = get_kdigo_classification(egfr, acr, bool(renal.get("ACR_COTA")))
         row["TFG"] = round(egfr, 1) if egfr is not None else ""
         if kdigo["g_cat"] and kdigo["a_cat"]:
-            row["KDIGO"] = f"{kdigo['g_cat']}{kdigo['a_cat']} - {kdigo['riesgo']}"
+            row["KDIGO"] = f"{kdigo['g_cat']}{kdigo['a_label']} - {kdigo['riesgo']}"
         elif kdigo["a_cat"]:
-            row["KDIGO"] = f"{kdigo['a_cat']} - {kdigo['riesgo']}"
+            row["KDIGO"] = f"{kdigo['a_label']} - {kdigo['riesgo']}"
         else:
             row["KDIGO"] = ""
 

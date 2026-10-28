@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.models import ReporteGenerado, ReporteResultado, Resultado, Paciente, User
 from app.utils.validators import nombre_completo_paciente
+from app.utils.acr import es_cota, ALB_TECHO_TIRA
 
 # Importar ReportLab para generación local sin dependencias de sistema C
 from reportlab.lib.pagesizes import letter
@@ -82,9 +83,11 @@ def calculate_egfr(scr: float, age: float, is_female: bool, height_cm: float | N
         egfr = 142 * term1 * term2 * term3 * gender_mult
         return egfr, "CKD-EPI 2021"
 
-def get_kdigo_classification(egfr: float | None, acr: float | None) -> dict:
+def get_kdigo_classification(egfr: float | None, acr: float | None, acr_es_cota: bool = False) -> dict:
     """
     Determina la clasificación KDIGO basada en TFG (eGFR) y ACR.
+    Con acr_es_cota el ACR es una cota inferior (albúmina fuera del rango de la tira): la categoría
+    es "al menos" la calculada (≥A2) y la recomendación pide confirmar con albúmina cuantitativa.
     Retorna un diccionario con detalles de riesgo y recomendaciones.
     """
     g_cat = None
@@ -112,15 +115,17 @@ def get_kdigo_classification(egfr: float | None, acr: float | None) -> dict:
     a_cat = None
     a_desc = ""
     if acr is not None:
-        if acr < 30:
+        if acr < 30 and not acr_es_cota:
             a_cat = "A1"
             a_desc = "Normal a ligeramente aumentado"
-        elif acr <= 300:
+        elif acr <= 300 and not (acr_es_cota and acr >= 300):
             a_cat = "A2"
             a_desc = "Moderadamente aumentado"
         else:
             a_cat = "A3"
             a_desc = "Gravemente aumentado"
+        if acr_es_cota:
+            a_desc = f"{a_desc}, como mínimo"
 
     color = "gray"
     riesgo = "Datos insuficientes"
@@ -176,10 +181,17 @@ def get_kdigo_classification(egfr: float | None, acr: float | None) -> dict:
             riesgo = "Alterado"
             recomendacion = "Se requiere una segunda determinación en 3 meses. Si esta es su segunda determinación con valores altos, busque valoración médica."
 
+    if acr_es_cota and a_cat:
+        recomendacion += (
+            " La albúmina rebasó el rango de la tira reactiva: el ACR es un valor mínimo y debe confirmarse "
+            "con albúmina cuantitativa en laboratorio."
+        )
+
     return {
         "g_cat": g_cat,
         "g_desc": g_desc,
         "a_cat": a_cat,
+        "a_label": f"≥{a_cat}" if acr_es_cota and a_cat else a_cat,
         "a_desc": a_desc,
         "color": color,
         "riesgo": riesgo,
@@ -334,6 +346,8 @@ def generate_reportlab_pdf(pdf_path, context):
     cre01 = None
     albor = None
     acr = None
+    acr_es_cota = False
+    albor_over = False
     fuente_cre01 = None
     fuente_albor = None
 
@@ -347,9 +361,11 @@ def generate_reportlab_pdf(pdf_path, context):
             fuente_cre01 = r.fuente or "vitros"
         elif code == "ALBOR":
             albor = val
+            albor_over = val is None and "over" in (r.valor_texto or "").lower()
             fuente_albor = r.fuente or "vitros"
         elif code == "ACR":
             acr = val
+            acr_es_cota = es_cota(r.valor_texto)
 
     # Descripciones del método según el instrumento que generó el resultado
     DESC_ALBOR_VITROS = "Inmunoturbidimetría automatizada (Vitros)"
@@ -434,10 +450,13 @@ def generate_reportlab_pdf(pdf_path, context):
         ]
     ]
     
-    albor_str = f"{albor:.1f}" if albor is not None else "No solicitado"
+    if albor_over:
+        albor_str = f"&gt;{ALB_TECHO_TIRA:g} (fuera del rango de la tira)"
+    else:
+        albor_str = f"{albor:.1f}" if albor is not None else "No solicitado"
     acr_rows.append([
         Paragraph("Albúmina en Orina (ALBOR)", cell_style),
-        Paragraph(albor_str, cell_bold if albor is not None else cell_style),
+        Paragraph(albor_str, cell_bold if albor is not None or albor_over else cell_style),
         Paragraph("mg/L", cell_style),
         Paragraph("&lt; 20.0", cell_style),
         Paragraph(desc_albor, cell_style)
@@ -454,15 +473,20 @@ def generate_reportlab_pdf(pdf_path, context):
     
     if acr is not None:
         acr_val_str = f"{acr:.1f}"
-        if acr < 30:
+        if acr_es_cota:
+            # Cota inferior (albúmina fuera del rango de la tira): nunca se muestra como valor exacto.
+            acr_val_str = f"&gt;{acr:g}"
+        if acr < 30 and not acr_es_cota:
             int_color = "#16a34a"
             acr_desc = "Normal a leve (<30)"
-        elif acr <= 300:
+        elif acr <= 300 and not (acr_es_cota and acr >= 300):
             int_color = "#ca8a04"
             acr_desc = "Moderado (30-300)"
         else:
             int_color = "#dc2626"
             acr_desc = "Severo (>300)"
+        if acr_es_cota:
+            acr_desc = f"{acr_desc}. Valor mínimo: positivo, confirmar con albúmina cuantitativa"
             
         acr_rows.append([
             Paragraph("Relación Albúmina/Creatinina (ACR)", cell_bold),
@@ -492,7 +516,7 @@ def generate_reportlab_pdf(pdf_path, context):
     elements.append(Spacer(1, 2))
     
     # SECCIÓN 3: CLASIFICACIÓN DE RIESGO KDIGO (SEMÁFORO)
-    kdigo = get_kdigo_classification(egfr, acr)
+    kdigo = get_kdigo_classification(egfr, acr, acr_es_cota)
     g_cat = kdigo["g_cat"]
     a_cat = kdigo["a_cat"]
     
@@ -605,7 +629,7 @@ def generate_reportlab_pdf(pdf_path, context):
         
     rec_text = f"<b>Nivel de Riesgo KDIGO:</b> <font color='{colors_text.get(kdigo['color'], '#000000')}'><b>{kdigo['riesgo'].upper()}</b></font><br/>"
     if g_cat and a_cat:
-        rec_text += f"Estadificación: <b>TFG {g_cat} ({kdigo['g_desc']})</b> y <b>ACR {a_cat} ({kdigo['a_desc']})</b>.<br/>"
+        rec_text += f"Estadificación: <b>TFG {g_cat} ({kdigo['g_desc']})</b> y <b>ACR {kdigo['a_label']} ({kdigo['a_desc']})</b>.<br/>"
     rec_text += f"<b>Recomendación:</b> {kdigo['recomendacion']}"
     
     rec_table = Table([[Paragraph(rec_text, body_style)]], colWidths=[564])

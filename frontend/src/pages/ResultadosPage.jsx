@@ -705,7 +705,7 @@ export default function ResultadosPage() {
                             <div className="text-[10px] text-slate-400">{est.prueba.categoria}</div>
                           </td>
                           <td className="p-3 text-center font-bold font-mono">
-                            {est.valor !== null ? `${est.valor} ${est.prueba.unidad}` : est.valor_texto}
+                            {est.valor !== null && !est.valor_texto?.startsWith('>') ? `${est.valor} ${est.prueba.unidad}` : `${est.valor_texto} ${est.valor_texto?.startsWith('>') ? est.prueba.unidad : ''}`}
                           </td>
                           <td className="p-3 text-center text-xs text-slate-400">
                             {est.prueba.valor_min !== null && est.prueba.valor_max !== null ? (
