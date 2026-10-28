@@ -19,7 +19,7 @@ ACR_A3_MIN = 300.0        # mg/g, KDIGO A3 es > 300
 
 OBS_COTA = (
     "ALB fuera del rango de la tira (>{alb:g} mg/L), CRE {cre:g} mg/dL: ACR mayor a {cota:g} mg/g "
-    "(cota mínima, no es un valor exacto). Positivo, pendiente de confirmar con albúmina cuantitativa."
+    "(cota mínima, no es un valor exacto). Positivo, pendiente de confirmar con albúmina cuantitativa en la siguiente determinación."
 )
 
 
