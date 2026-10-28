@@ -275,3 +275,58 @@ async def test_listado_de_pacientes_paginado_y_buscable_por_folio(client, auth_h
 
     r = await client.get("/api/pacientes", params={"search": "S90000002"}, headers=auth_headers)
     assert r.headers["x-total-count"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_vitros_con_folio_en_nts_se_resuelve_por_folio(db):
+    """En los Excel de Vitros de las escuelas el folio viene en NTS (y Número es otro identificador)."""
+    await sincronizar_alumnos(db, [alumno()])
+    p = await resolver_folio(db, "S00000001")
+    lote = Lote(nombre="vitros.xls", descripcion="t", usuario_id=1, estado="procesando",
+                total_registros=0, registros_exitosos=0, registros_error=0)
+    db.add(lote)
+    await db.flush()
+    df = pd.DataFrame([{"Fecha": "2026-10-27", "Número": "99921800", "Nombre del Paciente": "ANA",
+                        "Apellidos": "PRUEBA UNO", "NTS": "S00000001", "CRE01": "120", "ALBOR": "30"}])
+    lote = await process_horizontal_excel(db, df, lote)
+    assert lote.registros_exitosos == 1 and lote.registros_error == 0
+    v = await valores(db, p.id)
+    assert v[("CRE01", date(2026, 10, 19))] == (120.0, "vitros")
+    assert len((await db.execute(select(Paciente))).scalars().all()) == 1     # sin paciente duplicado
+
+
+@pytest.mark.asyncio
+async def test_unifica_duplicado_creado_con_folio_como_identificacion(db):
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed"))
+    from unificar_duplicados_folio import unificar
+
+    await sincronizar_alumnos(db, [alumno()])
+    real = await resolver_folio(db, "S00000001")
+    # tira ya cargada en el paciente del padrón: ALB 30, CRE 150 -> ACR 20
+    await process_uc1000_csv(db, csv_tira([("S00000001", "22/10/2026", "150", "30")]), "tira.csv", 1)
+
+    # duplicado como lo dejaba la carga vieja: identificacion = folio, fecha del archivo, CRE de Vitros
+    dup = Paciente(identificacion="S00000001", nombre="ANA", apellido="PRUEBA UNO", origen="servicio_externo")
+    db.add(dup)
+    await db.flush()
+    lote = Lote(nombre="vitros.xls", descripcion="t", usuario_id=1, estado="procesando",
+                total_registros=0, registros_exitosos=0, registros_error=0)
+    db.add(lote)
+    await db.flush()
+    crtn = (await db.execute(select(Prueba).where(Prueba.codigo == "CRE01"))).scalar_one()
+    db.add(Resultado(lote_id=lote.id, paciente_id=dup.id, prueba_id=crtn.id, valor=120, interpretacion="normal",
+                     fecha_toma=date(2026, 10, 27), fecha_resultado=date(2026, 10, 27), fuente="vitros"))
+    await db.commit()
+
+    cuenta, _ = await unificar(db, imprimir=lambda *_: None)
+    await db.commit()
+    assert cuenta["pacientes unificados"] == 1 and cuenta["Vitros reemplaza a tira"] == 1
+
+    pacientes = (await db.execute(select(Paciente))).scalars().all()
+    assert [p.id for p in pacientes] == [real.id]
+    v = await valores(db, real.id)
+    assert v[("CRE01", date(2026, 10, 19))] == (120.0, "vitros")
+    assert v[("ALBOR", date(2026, 10, 19))] == (30.0, "tira_uc1000")
+    assert v[("ACR", date(2026, 10, 19))][0] == pytest.approx(25.0)
+    assert not any(f != date(2026, 10, 19) for (_, f) in v)

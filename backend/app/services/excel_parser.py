@@ -361,15 +361,17 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             total_filas -= 1
             continue
 
-        # Muestras de campaña escolar: el "Número" es el folio de tamiz-escolar y el paciente se
-        # resuelve por folio (no por nombre).
-        folio_tamiz = normalizar_folio(numero_raw)
+        # Muestras de campaña escolar: el folio de tamiz-escolar puede venir en "Número" o en "NTS"
+        # (el Vitros captura ahí el identificador del paciente) y el paciente se resuelve por folio
+        # (no por nombre).
+        folio_tamiz = normalizar_folio(numero_raw) or normalizar_folio(nts_raw)
         paciente_tamiz = None
         if folio_tamiz:
             paciente_tamiz = await resolver_folio(db, folio_tamiz)
             if not paciente_tamiz:
-                errors.append({"fila": fila_num, "columna": "Número",
-                               "error": mensaje_folio_desconocido(folio_tamiz), "valor": numero_raw})
+                errors.append({"fila": fila_num, "columna": "Número" if normalizar_folio(numero_raw) else "NTS",
+                               "error": mensaje_folio_desconocido(folio_tamiz),
+                               "valor": numero_raw if normalizar_folio(numero_raw) else nts_raw})
                 erroneos += 1
                 continue
 
