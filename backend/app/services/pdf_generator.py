@@ -184,7 +184,7 @@ def get_kdigo_classification(egfr: float | None, acr: float | None, acr_es_cota:
     if acr_es_cota and a_cat:
         recomendacion += (
             " La albúmina rebasó el rango de la tira reactiva: el ACR es un valor mínimo y debe confirmarse "
-            "con albúmina cuantitativa en laboratorio."
+            "con albúmina cuantitativa en la siguiente determinación."
         )
 
     return {
@@ -486,7 +486,7 @@ def generate_reportlab_pdf(pdf_path, context):
             int_color = "#dc2626"
             acr_desc = "Severo (>300)"
         if acr_es_cota:
-            acr_desc = f"{acr_desc}. Valor mínimo: positivo, confirmar con albúmina cuantitativa"
+            acr_desc = f"{acr_desc}. Valor mínimo: positivo, confirmar en la siguiente determinación"
             
         acr_rows.append([
             Paragraph("Relación Albúmina/Creatinina (ACR)", cell_bold),
