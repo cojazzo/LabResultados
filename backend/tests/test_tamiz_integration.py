@@ -344,3 +344,75 @@ async def test_unifica_duplicado_creado_con_folio_como_identificacion(db):
     rr = (await db.execute(select(ReporteResultado).where(ReporteResultado.reporte_id == rep.id))).scalar_one()
     destino = (await db.execute(select(Resultado).where(Resultado.id == rr.resultado_id))).scalar_one()
     assert destino.paciente_id == real.id and destino.fuente == "vitros"
+
+
+@pytest.mark.asyncio
+async def test_folio_desconocido_sugiere_el_del_padron(db):
+    await sincronizar_alumnos(db, [alumno(folio="S26008185", nombres="RAUL FERNANDO", primer_apellido="AVILA",
+                                          segundo_apellido="MUÑOZ"),
+                                   alumno(folio="S26127258", curp=CURP_B, nombres="DYLAN ALEXANDER",
+                                          primer_apellido="REYES", segundo_apellido="MEDINA")])
+
+    def excel(fila):
+        return pd.DataFrame([{"Fecha": "2026-10-26", "Número": "99921800", "NTS": fila[0],
+                              "Nombre del Paciente": fila[1], "Apellidos": fila[2], "CRE01": "120"}])
+
+    def msg(lote):
+        return " ".join(e["error"] for e in json.loads(lote.log_errores))
+
+    async def subir(df):
+        lote = Lote(nombre="v.xls", descripcion="t", usuario_id=1, estado="procesando",
+                    total_registros=0, registros_exitosos=0, registros_error=0)
+        db.add(lote)
+        await db.flush()
+        return await process_horizontal_excel(db, df, lote)
+
+    # un dígito mal y mismo nombre (con acento distinto) -> sugiere
+    l1 = await subir(excel(("S26006185", "Raul Fernando", "Avila Muñoz")))
+    assert l1.registros_error == 1 and "¿Quisiste decir S26008185?" in msg(l1)
+    # un dígito mal y el nombre también tiene un error de captura -> sugiere
+    l2 = await subir(excel(("S26127256", "DYLAN ALEXANER", "REYES MEDINA")))
+    assert "S26127258" in msg(l2)
+    # mismo nombre pero folio totalmente distinto (cambió de escuela) -> sugiere por nombre
+    l3 = await subir(excel(("S26999999", "RAUL FERNANDO", "AVILA MUÑOZ")))
+    assert "S26008185" in msg(l3) and "mismo nombre" in msg(l3)
+    # nombre que no corresponde a nadie -> sin sugerencia, y nunca se crean pacientes
+    l4 = await subir(excel(("S26006185", "PERSONA", "INVENTADA")))
+    assert "Quisiste decir" not in msg(l4)
+    assert len((await db.execute(select(Paciente))).scalars().all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_unifica_folio_mal_capturado_con_mapa_explicito(db):
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed"))
+    from unificar_duplicados_folio import unificar
+
+    await sincronizar_alumnos(db, [alumno(folio="S26008185")])
+    real = await resolver_folio(db, "S26008185")
+    mal = Paciente(identificacion="S26006185", nombre="ANA", apellido="PRUEBA UNO", origen="servicio_externo")
+    otro = Paciente(identificacion="S26555555", nombre="OTRA", apellido="PERSONA", origen="servicio_externo")
+    db.add_all([mal, otro])
+    await db.flush()
+    lote = Lote(nombre="v.xls", descripcion="t", usuario_id=1, estado="procesando",
+                total_registros=0, registros_exitosos=0, registros_error=0)
+    db.add(lote)
+    await db.flush()
+    cre = Prueba(codigo="CRE01", nombre="Creatinina Urinaria", categoria="Orina", unidad="mg/dL")
+    db.add(cre)
+    await db.flush()
+    db.add(Resultado(lote_id=lote.id, paciente_id=mal.id, prueba_id=cre.id, valor=125, interpretacion="normal",
+                     fecha_toma=date(2026, 10, 27), fecha_resultado=date(2026, 10, 27), fuente="vitros"))
+    await db.commit()
+
+    # sin mapa no se une (el folio mal capturado no existe en el padrón)
+    cuenta, _ = await unificar(db, imprimir=lambda *_: None)
+    assert cuenta["pacientes unificados"] == 0
+    # con mapa solo se une el indicado; el otro folio queda intacto
+    cuenta, _ = await unificar(db, imprimir=lambda *_: None, mapa={"S26006185": "S26008185"})
+    await db.commit()
+    assert cuenta["pacientes unificados"] == 1
+    ids = {p.identificacion for p in (await db.execute(select(Paciente))).scalars().all()}
+    assert ids == {CURP_A, "S26555555"}
+    v = await valores(db, real.id)
+    assert v[("CRE01", date(2026, 10, 19))] == (125.0, "vitros")

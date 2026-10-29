@@ -10,7 +10,9 @@ from app.utils.validators import normalize_column_name, parse_date, validate_ema
 from app.utils.curp_validator import match_patient_identifier
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
-from app.services.tamiz_sync import normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz
+from app.services.tamiz_sync import (
+    SugeridorFolios, normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
+)
 
 async def process_excel_file(db: AsyncSession, file_content: bytes, filename: str, usuario_id: int) -> Lote:
     """
@@ -342,6 +344,8 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
     pruebas_result = await db.execute(select(Prueba))
     pruebas_cache = {p.codigo: p for p in pruebas_result.scalars().all()}
 
+    sugeridor = SugeridorFolios(db)
+
     # Procesar cada fila
     for index, row in df.iterrows():
         fila_num = index + 2
@@ -369,8 +373,9 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
         if folio_tamiz:
             paciente_tamiz = await resolver_folio(db, folio_tamiz)
             if not paciente_tamiz:
+                sugerencia = await sugeridor.sugerir(folio_tamiz, nombre_raw, apellidos_raw)
                 errors.append({"fila": fila_num, "columna": "Número" if normalizar_folio(numero_raw) else "NTS",
-                               "error": mensaje_folio_desconocido(folio_tamiz),
+                               "error": mensaje_folio_desconocido(folio_tamiz, sugerencia),
                                "valor": numero_raw if normalizar_folio(numero_raw) else nts_raw})
                 erroneos += 1
                 continue

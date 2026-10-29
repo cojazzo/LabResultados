@@ -3,7 +3,8 @@ Unifica pacientes duplicados creados por cargas de Excel de Vitros donde el foli
 venía en la columna NTS y se guardó como si fuera la identificación (CURP) de un paciente nuevo.
 
 Para cada paciente con identificacion = folio (letra + 8 dígitos) y SIN folio_tamiz, si existe el
-paciente del padrón con ese folio_tamiz:
+paciente del padrón con ese folio_tamiz (o, con --mapa, el folio del padrón que se indique para un
+folio capturado con error o de otra escuela):
   - sus resultados pasan al paciente del padrón, con la fecha de toma que corresponde a la campaña
     (fecha de evaluación, igual que en las cargas nuevas);
   - si ya hay un resultado de esa prueba en esa visita, gana Vitros sobre tira; entre iguales se queda
@@ -16,6 +17,7 @@ resultado que se conserva); quedan con el contenido de cuando se generaron y se 
 Uso (dentro del contenedor del backend):
     python seed/unificar_duplicados_folio.py            # simulación: lista y hace rollback
     python seed/unificar_duplicados_folio.py --real     # guarda (respaldo en /tmp/duplicados_folio_respaldo.json)
+    python seed/unificar_duplicados_folio.py --mapa S26006185=S26008185,S26019123=S26019125 [--real]
 """
 import argparse
 import asyncio
@@ -54,21 +56,22 @@ async def _reapuntar_reportes(db, resultado_viejo: int, resultado_nuevo: int):
                      .values(resultado_id=resultado_nuevo))
 
 
-async def unificar(db, imprimir=print):
+async def unificar(db, imprimir=print, mapa=None):
     """Unifica los duplicados en la sesión dada (sin confirmar). Devuelve (conteos, respaldo)."""
     cuenta = Counter()
     respaldo = []
+    mapa = mapa or {}
     pruebas = {p.codigo: p for p in (await db.execute(
         select(Prueba).where(Prueba.codigo.in_([CODIGO_ALB, CODIGO_CRE, CODIGO_ACR])))).scalars().all()}
 
     duplicados = [p for p in (await db.execute(
         select(Paciente).where(Paciente.folio_tamiz.is_(None)))).scalars().all()
-        if FOLIO_RE.match(p.identificacion or "")]
+        if FOLIO_RE.match(p.identificacion or "") and (not mapa or p.identificacion in mapa)]
     imprimir(f"{len(duplicados)} pacientes con identificación tipo folio y sin folio_tamiz")
 
     for dup in duplicados:
-        real_p = (await db.execute(select(Paciente).where(Paciente.folio_tamiz == dup.identificacion))
-                  ).scalar_one_or_none()
+        real_p = (await db.execute(select(Paciente).where(
+            Paciente.folio_tamiz == mapa.get(dup.identificacion, dup.identificacion)))).scalar_one_or_none()
         if not real_p:
             cuenta["sin paciente en el padrón (se deja igual)"] += 1
             imprimir(f"  {dup.identificacion}: no existe en el padrón, se deja igual")
@@ -120,9 +123,9 @@ async def unificar(db, imprimir=print):
     return cuenta, respaldo
 
 
-async def main(real: bool):
+async def main(real: bool, mapa: dict):
     async with AsyncSessionLocal() as db:
-        cuenta, respaldo = await unificar(db)
+        cuenta, respaldo = await unificar(db, mapa=mapa)
         print(f"{'' if real else '[SIMULACIÓN] '}Resumen:")
         for k, v in cuenta.items():
             print(f"  {k}: {v}")
@@ -139,4 +142,7 @@ async def main(real: bool):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--real", action="store_true")
-    asyncio.run(main(ap.parse_args().real))
+    ap.add_argument("--mapa", default="", help="folio_capturado=folio_padron separados por coma")
+    args = ap.parse_args()
+    equivalencias = dict(par.split("=", 1) for par in args.mapa.split(",") if par.strip())
+    asyncio.run(main(args.real, {k.strip(): v.strip() for k, v in equivalencias.items()}))

@@ -9,7 +9,9 @@ Integración con tamiz-escolar.
 
 import json
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
+from difflib import SequenceMatcher
 from decimal import Decimal
 from typing import Optional
 
@@ -52,11 +54,73 @@ async def resolver_folio(db: AsyncSession, folio: str) -> Optional[Paciente]:
     return res.scalar_one_or_none()
 
 
-def mensaje_folio_desconocido(folio: str) -> str:
-    return (
+def mensaje_folio_desconocido(folio: str, sugerencia: Optional[str] = None) -> str:
+    msg = (
         f"El folio {folio} no existe en LabResultados. Sincroniza el padrón de tamiz-escolar "
         "(o verifica que el folio esté bien capturado) y vuelve a subir el archivo."
     )
+    if sugerencia:
+        msg += f" {sugerencia}"
+    return msg
+
+
+def _norm_nombre(*partes) -> str:
+    texto = " ".join(p for p in partes if p)
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn").upper()
+    return re.sub(r"[^A-Z ]+", " ", texto).strip()
+
+
+def _distancia_folios(a: str, b: str) -> int:
+    return sum(x != y for x, y in zip(a, b)) if len(a) == len(b) else 99
+
+
+class SugeridorFolios:
+    """
+    Sugiere el folio del padrón cuando un folio capturado no existe (típicamente un error de captura
+    o una etiqueta de otra escuela). Solo sugiere: nunca asigna resultados por su cuenta.
+    Carga el padrón una sola vez, la primera vez que se necesita.
+    """
+
+    UMBRAL_NOMBRE = 0.85
+    DISTANCIA_MAX = 2
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self._padron: Optional[list[tuple[str, str]]] = None      # (folio, nombre normalizado)
+        self._por_nombre: dict[str, list[str]] = {}
+
+    async def _cargar(self):
+        if self._padron is not None:
+            return
+        res = await self.db.execute(
+            select(Paciente.folio_tamiz, Paciente.nombre, Paciente.apellido, Paciente.apellido_materno)
+            .where(Paciente.folio_tamiz.is_not(None)))
+        self._padron = []
+        for folio, nombre, ap, am in res.all():
+            n = _norm_nombre(nombre, ap, am)
+            self._padron.append((folio, n))
+            self._por_nombre.setdefault(n, []).append(folio)
+
+    async def sugerir(self, folio: str, nombre: Optional[str], apellidos: Optional[str]) -> Optional[str]:
+        objetivo = _norm_nombre(nombre, apellidos)
+        if not objetivo:
+            return None
+        await self._cargar()
+        # 1) folio casi igual (1-2 dígitos) y nombre muy parecido
+        candidatos = [
+            f for f, n in self._padron
+            if _distancia_folios(folio, f) <= self.DISTANCIA_MAX
+            and SequenceMatcher(None, objetivo, n).ratio() >= self.UMBRAL_NOMBRE
+        ]
+        motivo = "folio parecido y mismo nombre"
+        # 2) si no, un único alumno con exactamente el mismo nombre (p. ej. cambió de escuela)
+        if not candidatos:
+            candidatos = self._por_nombre.get(objetivo, [])
+            motivo = "mismo nombre"
+        if len(candidatos) != 1:
+            return None
+        return f"¿Quisiste decir {candidatos[0]}? ({motivo} en el padrón; confírmalo y corrige el archivo)"
 
 
 # ---------------------------------------------------------------------------
