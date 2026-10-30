@@ -18,6 +18,8 @@ Uso (dentro del contenedor del backend):
     python seed/unificar_duplicados_folio.py            # simulación: lista y hace rollback
     python seed/unificar_duplicados_folio.py --real     # guarda (respaldo en /tmp/duplicados_folio_respaldo.json)
     python seed/unificar_duplicados_folio.py --mapa S26006185=S26008185,S26019123=S26019125 [--real]
+    python seed/unificar_duplicados_folio.py --mapa-archivo - [--real] < equivalencias.txt   (una "origen=destino" por línea)
+El destino puede ser un folio del padrón o la identificación (CURP) del paciente que se conserva.
 """
 import argparse
 import asyncio
@@ -64,14 +66,22 @@ async def unificar(db, imprimir=print, mapa=None):
     pruebas = {p.codigo: p for p in (await db.execute(
         select(Prueba).where(Prueba.codigo.in_([CODIGO_ALB, CODIGO_CRE, CODIGO_ACR])))).scalars().all()}
 
-    duplicados = [p for p in (await db.execute(
-        select(Paciente).where(Paciente.folio_tamiz.is_(None)))).scalars().all()
-        if FOLIO_RE.match(p.identificacion or "") and (not mapa or p.identificacion in mapa)]
+    if mapa:
+        # con equivalencias explícitas: cualquier paciente indicado (folio mal escrito, SYN, número, etc.)
+        duplicados = (await db.execute(select(Paciente).where(Paciente.identificacion.in_(list(mapa))))).scalars().all()
+        for faltante in sorted(set(mapa) - {p.identificacion for p in duplicados}):
+            imprimir(f"  {faltante}: no existe en LabResultados (nada que unir)")
+    else:
+        duplicados = [p for p in (await db.execute(
+            select(Paciente).where(Paciente.folio_tamiz.is_(None)))).scalars().all()
+            if FOLIO_RE.match(p.identificacion or "")]
     imprimir(f"{len(duplicados)} pacientes con identificación tipo folio y sin folio_tamiz")
 
     for dup in duplicados:
+        destino_id = mapa.get(dup.identificacion, dup.identificacion)
         real_p = (await db.execute(select(Paciente).where(
-            Paciente.folio_tamiz == mapa.get(dup.identificacion, dup.identificacion)))).scalar_one_or_none()
+            (Paciente.folio_tamiz == destino_id) | (Paciente.identificacion == destino_id),
+            Paciente.id != dup.id))).scalars().first()
         if not real_p:
             cuenta["sin paciente en el padrón (se deja igual)"] += 1
             imprimir(f"  {dup.identificacion}: no existe en el padrón, se deja igual")
@@ -142,7 +152,12 @@ async def main(real: bool, mapa: dict):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--real", action="store_true")
-    ap.add_argument("--mapa", default="", help="folio_capturado=folio_padron separados por coma")
+    ap.add_argument("--mapa", default="", help="origen=destino separados por coma")
+    ap.add_argument("--mapa-archivo", default="", help="archivo (o - para stdin) con una línea origen=destino")
     args = ap.parse_args()
-    equivalencias = dict(par.split("=", 1) for par in args.mapa.split(",") if par.strip())
+    pares = [x for x in args.mapa.split(",") if x.strip()]
+    if args.mapa_archivo:
+        fuente = sys.stdin if args.mapa_archivo == "-" else open(args.mapa_archivo, encoding="utf-8")
+        pares += [ln.split("#")[0].strip() for ln in fuente if ln.split("#")[0].strip()]
+    equivalencias = dict(par.split("=", 1) for par in pares)
     asyncio.run(main(args.real, {k.strip(): v.strip() for k, v in equivalencias.items()}))

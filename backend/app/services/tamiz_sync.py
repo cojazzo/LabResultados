@@ -102,6 +102,23 @@ class SugeridorFolios:
             self._padron.append((folio, n))
             self._por_nombre.setdefault(n, []).append(folio)
 
+    async def sugerir_texto(self, texto: str) -> Optional[str]:
+        """Sugiere el folio cuando el ID de la tira trae un nombre (truncado): cada palabra debe ser
+        el inicio de una palabra del nombre en el padrón y solo puede haber un alumno así."""
+        palabras = _norm_nombre(texto).split()
+        if len(palabras) < 2:
+            return None
+        await self._cargar()
+        coinciden = []
+        for folio, nombre in self._padron:
+            partes = nombre.split()
+            if all(any(parte.startswith(p) for parte in partes) for p in palabras):
+                coinciden.append((folio, nombre))
+        if len(coinciden) != 1:
+            return None
+        return (f"¿Será {coinciden[0][0]} ({coinciden[0][1]})? Hay un único alumno del padrón con ese nombre; "
+                "confírmalo y escribe el folio en el archivo.")
+
     async def sugerir(self, folio: str, nombre: Optional[str], apellidos: Optional[str]) -> Optional[str]:
         objetivo = _norm_nombre(nombre, apellidos)
         if not objetivo:

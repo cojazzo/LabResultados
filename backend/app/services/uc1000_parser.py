@@ -40,7 +40,7 @@ from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
 from app.utils.acr import cota_acr, texto_cota, observacion_cota
 from app.services.tamiz_sync import (
-    normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
+    SugeridorFolios, normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
 )
 
 # ---------------------------------------------------------------------------
@@ -305,6 +305,7 @@ async def calculate_acr_for_patient(
 async def _resolve_paciente(
     db: AsyncSession,
     raw_id: str,
+    sugeridor: Optional[SugeridorFolios] = None,
 ) -> tuple:
     """
     Resuelve el paciente a partir del valor de la columna ID del UC-1000.
@@ -376,9 +377,11 @@ async def _resolve_paciente(
         return paciente, None
 
     # ── Caso 3: Formato no reconocido ─────────────────────────────────────
+    sugerencia = await sugeridor.sugerir_texto(raw_id) if sugeridor else None
     return None, (
         f"El ID '{raw_id}' no es una CURP válida (18 caracteres) "
         f"ni un ID de petición con modificador ({ID_CON_MOD_LEN} dígitos numéricos)."
+        + (f" {sugerencia}" if sugerencia else "")
     )
 
 
@@ -488,6 +491,8 @@ async def process_uc1000_csv(
                                               "Relación Albúmina/Creatinina", "mg/g",
                                               valor_max=30.0)
 
+    sugeridor = SugeridorFolios(db)
+
     # 4. Procesar cada fila
     filas_contadas = 0
     for row_idx, row in enumerate(data_rows):
@@ -520,7 +525,7 @@ async def process_uc1000_csv(
             fecha_toma = date_today.today()
 
         # Resolver paciente: CURP directa o ID de petición con modificador
-        paciente, resolve_error = await _resolve_paciente(db, id_valor)
+        paciente, resolve_error = await _resolve_paciente(db, id_valor, sugeridor)
 
         if resolve_error:
             errors.append({
