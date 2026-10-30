@@ -172,18 +172,43 @@ def _seg_muestra_inicio(ctx: Optional[dict], meta: Optional[dict]) -> Optional[d
     return None
 
 
+VENTANA_MISMA_TOMA_DIAS = 7   # la segunda muestra es meses después; una misma toma se mide en pocos días
+
+
+async def _fecha_visita_existente(db: AsyncSession, paciente_id: int, fecha_archivo: Optional[date],
+                                  meta: Optional[dict]) -> Optional[date]:
+    """Fecha de la visita más antigua del alumno a ±7 días de la fecha del archivo (o esa misma fecha)."""
+    if fecha_archivo is None:
+        return None
+    rondas = (meta or {}).get("rondas") or []
+    seg_inicio = _a_fecha(rondas[0].get("seg_muestra_inicio")) if rondas else None
+    if seg_inicio and fecha_archivo >= seg_inicio:
+        return fecha_archivo       # segunda muestra: su propia visita
+    delta = timedelta(days=VENTANA_MISMA_TOMA_DIAS)
+    res = await db.execute(
+        select(Resultado.fecha_toma).where(
+            Resultado.paciente_id == paciente_id,
+            Resultado.fecha_toma >= fecha_archivo - delta,
+            Resultado.fecha_toma <= fecha_archivo + delta,
+        ).order_by(Resultado.fecha_toma).limit(1))
+    cercana = res.scalar_one_or_none()
+    return min(cercana, fecha_archivo) if cercana else fecha_archivo
+
+
 async def fecha_toma_tamiz(db: AsyncSession, paciente: Paciente, fecha_archivo: Optional[date]) -> Optional[date]:
     """
     Fecha de toma de una muestra de campaña escolar:
       - 1a muestra: la fecha de evaluación registrada en tamiz (así la tira y la confirmación de Vitros
         caen en la misma visita aunque se procesen en días distintos).
       - 2a muestra (archivo con fecha dentro/después de la ventana de segunda muestra): la fecha del archivo.
-      - Alumno sin evaluación capturada: la fecha del archivo.
+      - Alumno sin evaluación capturada (aún): se une a la visita que ya tenga a pocos días (la misma
+        toma medida en días distintos); si no tiene, la fecha del archivo. Cuando llegue la evaluación,
+        _realinear_fechas mueve la primera muestra a esa fecha.
     """
     ctx, meta = await _contexto_tamiz(db, paciente.id)
     evaluacion = _a_fecha(ctx.get("fecha_evaluacion")) if ctx else None
     if not evaluacion:
-        return fecha_archivo
+        return await _fecha_visita_existente(db, paciente.id, fecha_archivo, meta)
     if fecha_archivo is None:
         return evaluacion
     seg_inicio = _seg_muestra_inicio(ctx, meta)

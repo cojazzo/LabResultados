@@ -454,3 +454,42 @@ async def test_vitros_por_curp_cae_en_la_visita_de_evaluacion_y_se_reunen_las_ya
     v = await valores(db, p.id)
     assert v[("CRE01", date(2026, 10, 19))][1] in ("vitros", "tira_uc1000")
     assert not any(f != date(2026, 10, 19) for (_, f) in v)
+
+
+@pytest.mark.asyncio
+async def test_alumno_sin_evaluacion_une_tira_y_vitros_de_la_misma_toma(db):
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed"))
+    from reunir_visitas_tamiz import reunir
+
+    await sincronizar_alumnos(db, [alumno(fecha_evaluacion=None)])      # tamiz aún no captura la evaluación
+    p = await resolver_folio(db, "S00000001")
+    await process_uc1000_csv(db, csv_tira([("S00000001", "27/10/2026", "100", "30")]), "tira.csv", 1)
+
+    df = pd.DataFrame([{"Fecha": "2026-10-28", "Número": "99921800", "Nombre del Paciente": "ANA",
+                        "Apellidos": "PRUEBA UNO", "NTS": CURP_A, "CRE01": "132.3"}])
+    lote = Lote(nombre="v.xls", descripcion="t", usuario_id=1, estado="procesando",
+                total_registros=0, registros_exitosos=0, registros_error=0)
+    db.add(lote)
+    await db.flush()
+    await process_horizontal_excel(db, df, lote)
+    v = await valores(db, p.id)
+    assert not any(f != date(2026, 10, 27) for (_, f) in v)             # una sola visita: la de la primera medición
+    assert v[("CRE01", date(2026, 10, 27))] == (132.3, "vitros")
+    assert v[("ACR", date(2026, 10, 27))][0] == pytest.approx(30 / 132.3 * 100, rel=1e-3)
+
+    # una segunda muestra meses después sigue siendo su propia visita
+    await process_uc1000_csv(db, csv_tira([("S00000001", "15/01/2027", "100", "10")]), "tira2.csv", 1)
+    v = await valores(db, p.id)
+    assert ("ALBOR", date(2027, 1, 15)) in v and ("ALBOR", date(2026, 10, 27)) in v
+
+    # y las visitas que ya estaban separadas se reúnen con el script
+    for r in (await db.execute(select(Resultado).join(Prueba, Prueba.id == Resultado.prueba_id)
+                               .where(Prueba.codigo == "CRE01", Resultado.fuente == "vitros"))).scalars():
+        r.fecha_toma = date(2026, 10, 28)
+    await db.commit()
+    cuenta, _ = await reunir(db)
+    await db.commit()
+    assert cuenta["alumnos reunidos"] == 1
+    v = await valores(db, p.id)
+    assert ("CRE01", date(2026, 10, 27)) in v and ("CRE01", date(2026, 10, 28)) not in v
