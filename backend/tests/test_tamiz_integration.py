@@ -416,3 +416,41 @@ async def test_unifica_folio_mal_capturado_con_mapa_explicito(db):
     assert ids == {CURP_A, "S26555555"}
     v = await valores(db, real.id)
     assert v[("CRE01", date(2026, 10, 19))] == (125.0, "vitros")
+
+
+@pytest.mark.asyncio
+async def test_vitros_por_curp_cae_en_la_visita_de_evaluacion_y_se_reunen_las_ya_separadas(db):
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed"))
+    from reunir_visitas_tamiz import reunir
+
+    await sincronizar_alumnos(db, [alumno()])          # evaluación 2026-10-19
+    p = await resolver_folio(db, "S00000001")
+    await process_uc1000_csv(db, csv_tira([("S00000001", "22/10/2026", "100", "30")]), "tira.csv", 1)
+
+    df = pd.DataFrame([{"Fecha": "2026-10-28", "Número": "99921800", "Nombre del Paciente": "OTRO NOMBRE",
+                        "Apellidos": "OTRO APELLIDO", "NTS": CURP_A, "CRE01": "132.3"}])
+    lote = Lote(nombre="v.xls", descripcion="t", usuario_id=1, estado="procesando",
+                total_registros=0, registros_exitosos=0, registros_error=0)
+    db.add(lote)
+    await db.flush()
+    # el alumno viene identificado por CURP: antes caía en la fecha del archivo (28) y no se juntaba con la tira
+    await process_horizontal_excel(db, df, lote)
+    v = await valores(db, p.id)
+    assert v[("CRE01", date(2026, 10, 19))] == (132.3, "vitros")
+    assert v[("ACR", date(2026, 10, 19))][0] == pytest.approx(30 / 132.3 * 100, rel=1e-3)
+    assert not any(f != date(2026, 10, 19) for (_, f) in v)
+    pac = (await db.execute(select(Paciente))).scalar_one()
+    assert (pac.nombre, pac.apellido) == ("ANA", "PRUEBA")           # tamiz manda los datos, no el Excel
+
+    # datos ya cargados en visitas separadas (como quedaron antes del arreglo) -> el script los reúne
+    for r in (await db.execute(select(Resultado).join(Prueba, Prueba.id == Resultado.prueba_id)
+                               .where(Prueba.codigo == "CRE01", Resultado.fuente == "vitros"))).scalars():
+        r.fecha_toma = date(2026, 10, 28)
+    await db.commit()
+    cuenta, _ = await reunir(db)
+    await db.commit()
+    assert cuenta["alumnos reunidos"] == 1
+    v = await valores(db, p.id)
+    assert v[("CRE01", date(2026, 10, 19))][1] in ("vitros", "tira_uc1000")
+    assert not any(f != date(2026, 10, 19) for (_, f) in v)

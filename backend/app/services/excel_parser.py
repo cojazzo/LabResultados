@@ -427,11 +427,16 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
                 )
                 db.add(paciente)
                 await db.flush()
-            else:
+            elif not paciente.folio_tamiz:   # los datos de alumnos del padrón los manda tamiz
                 if nombre_raw: paciente.nombre = nombre_raw
                 if apellidos_raw: paciente.apellido = apellidos_raw
                 if pac_nac: paciente.fecha_nacimiento = pac_nac
                 if sexo_raw: paciente.sexo = sexo_raw
+
+            # Alumno de campaña escolar identificado por CURP (no por folio): misma regla de fecha de
+            # toma, para que Vitros y la tira caigan en la misma visita.
+            if paciente.folio_tamiz:
+                fecha_toma_val = await fecha_toma_tamiz(db, paciente, fecha_toma_val)
 
         # Procesar columnas de pruebas
         fila_exitosos = 0

@@ -534,7 +534,7 @@ async def process_uc1000_csv(
 
         # Muestras de campaña escolar (folio de tamiz): la fecha de toma es la fecha de evaluación
         # en tamiz, para que la tira y la confirmación de Vitros caigan en la misma visita.
-        if normalizar_folio(id_valor):
+        if normalizar_folio(id_valor) or paciente.folio_tamiz:
             fecha_toma = await fecha_toma_tamiz(db, paciente, fecha_toma)
 
         # Parsear valores numéricos
