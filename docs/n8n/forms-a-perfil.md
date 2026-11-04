@@ -58,8 +58,10 @@ Las pruebas automáticas del backend con estos mismos casos están en `backend/t
 ## Verificación contra el MCP
 
 Los nodos se verificaron con `get_node` y el workflow con `validate_workflow` (11 nodos, 9 conexiones, 0 errores,
-0 advertencias). **No se pudo crear en la instancia**: la API key del MCP fue rechazada (`AUTHENTICATION_ERROR`),
-por eso se entrega como JSON para importar.
+0 advertencias). Se creó en la instancia (2026-11-04) con id `TWkwc4acAPwdvau6`, **inactivo**, y se validó de nuevo
+con `n8n_validate_workflow` (mismo resultado). En sus Settings se fijó `errorWorkflow` = él mismo, porque un
+`Error Trigger` dentro del mismo workflow solo se dispara así. Si se importa el JSON en otra instancia, hay que
+repetir ese ajuste (Settings → Error Workflow).
 
 Propiedad no verificada: el intervalo de sondeo del Google Sheets Trigger (`pollTimes`) no aparece en el esquema del MCP;
 el workflow no lo define y usa el valor por defecto del trigger. Revisar en la interfaz de n8n.
