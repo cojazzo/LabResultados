@@ -9,6 +9,7 @@ from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion, interpretar_valor_texto
 from app.utils.curp_validator import match_patient_identifier
 from app.services.identidad import ResolvedorIdentidad
+from app.services.peticiones import normalizar_peticion, vincular_peticion
 from app.utils.validators import normalizar_estatura_cm, normalizar_peso_kg
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
@@ -439,6 +440,11 @@ async def process_horizontal_excel(db: AsyncSession, df: pd.DataFrame, lote: Lot
             # toma, para que Vitros y la tira caigan en la misma visita.
             if paciente.folio_tamiz:
                 fecha_toma_val = await fecha_toma_tamiz(db, paciente, fecha_toma_val)
+
+        # La petición del Vitros ("Número") queda vinculada al paciente: así la tira (que manda "17"+petición)
+        # lo encuentra. Si esa petición ya es de otro paciente no se cambia nada.
+        if not paciente_tamiz and normalizar_peticion(numero_raw):
+            await vincular_peticion(db, numero_raw, paciente, "vitros")
 
         # Procesar columnas de pruebas
         fila_exitosos = 0

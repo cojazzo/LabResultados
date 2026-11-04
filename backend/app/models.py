@@ -242,6 +242,23 @@ class Campana(Base):
     inscripciones = relationship("CampanaPaciente", back_populates="campana")
 
 
+class Peticion(Base):
+    """
+    ID de petición del servicio externo (8 dígitos, ej. 99922201) vinculado a un paciente. Permite que las filas
+    de la tira (UC-1000 manda "17" + petición) encuentren al paciente aunque no exista un resultado de Vitros
+    (cuando no se pidió creatinina no hay Excel de Vitros que registre la petición).
+    """
+    __tablename__ = "peticiones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    id_peticion = Column(String, unique=True, index=True, nullable=False)
+    paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False, index=True)
+    fuente = Column(String, default="manual")  # manual | vitros | api
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    paciente = relationship("Paciente")
+
+
 class CampanaPaciente(Base):
     __tablename__ = "campana_pacientes"
 

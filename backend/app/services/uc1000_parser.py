@@ -39,6 +39,7 @@ from sqlalchemy import select
 from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
 from app.utils.acr import cota_acr, texto_cota, observacion_cota
+from app.services.peticiones import paciente_por_peticion
 from app.services.tamiz_sync import (
     SugeridorFolios, normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
 )
@@ -348,6 +349,13 @@ async def _resolve_paciente(
     # ── Caso 2: ID de petición con modificador (10 dígitos numéricos) ─────
     if len(raw_id) == ID_CON_MOD_LEN and raw_id.isdigit():
         id_peticion = raw_id[MODIFICADOR_LEN:]  # quitar los 2 dígitos del modificador
+
+        # 1) Vínculo registrado (a mano/API, o por el Excel de Vitros): sirve aunque no haya resultado de Vitros
+        vinculado = await paciente_por_peticion(db, id_peticion)
+        if vinculado:
+            return vinculado, None
+
+        # 2) Petición registrada solo en las observaciones de un resultado de Vitros
         patron = f"Petición No. {id_peticion}"
 
         # Buscar cualquier Resultado cuyas observaciones contengan ese número
@@ -361,7 +369,8 @@ async def _resolve_paciente(
             return None, (
                 f"No existe ningún registro con Petición No. {id_peticion} "
                 f"(ID de UC-1000: '{raw_id}'). "
-                "Sube primero el Excel del Vitros para registrar al paciente."
+                "Sube primero el Excel del Vitros, o vincula la petición al paciente "
+                "(POST /api/integraciones/peticiones o seed/vincular_peticiones.py) si solo se hizo tira."
             )
 
         # Recuperar el paciente a través del resultado encontrado

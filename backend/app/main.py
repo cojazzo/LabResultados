@@ -20,7 +20,7 @@ from app.routes.pacientes import router as pacientes_router
 from app.routes.automation import router as automation_router
 from app.routes.quimicos import router as quimicos_router
 from app.routes.campanas import router as campanas_router
-from app.routes.integraciones import router as integraciones_router, router_forms as integraciones_forms_router
+from app.routes.integraciones import router as integraciones_router, router_forms as integraciones_forms_router, router_peticiones as integraciones_peticiones_router
 
 settings = get_settings()
 
@@ -114,6 +114,7 @@ app.include_router(quimicos_router, prefix="/api")
 app.include_router(campanas_router, prefix="/api")
 app.include_router(integraciones_router, prefix="/api")
 app.include_router(integraciones_forms_router, prefix="/api")
+app.include_router(integraciones_peticiones_router, prefix="/api")
 
 @app.get("/health")
 async def health_check():

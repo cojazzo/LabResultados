@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user_or_system
 from app.database import get_db
-from app.models import Lote
+from sqlalchemy import select
+
+from app.models import Lote, Paciente
 from app.services.excel_parser import procesar_df_tamizaje
+from app.services.peticiones import vincular_peticion
 from app.services.tamiz_sync import CICLO_DEFAULT, sincronizar_alumnos
 
 router = APIRouter(prefix="/integraciones/tamiz", tags=["Integración tamiz-escolar"])
@@ -133,3 +136,44 @@ async def recibir_respuestas_forms(
         "errores": out["errores"],
         "por_revisar": sum(1 for d in out["detalles"] if d.get("revisar")),
     }
+
+
+# ---------------------------------------------------------------------------
+# Peticiones del servicio externo: vincular el ID de petición (tira) con un paciente
+# ---------------------------------------------------------------------------
+
+router_peticiones = APIRouter(prefix="/integraciones/peticiones", tags=["Peticiones del servicio externo"])
+
+
+class VinculoPeticion(BaseModel):
+    id_peticion: str = Field(min_length=8, max_length=12, description="8 dígitos (o 10 con el modificador del UC-1000)")
+    identificacion: str = Field(min_length=3, max_length=60, description="CURP o folio del paciente")
+
+
+class VincularPeticionesRequest(BaseModel):
+    vinculos: List[VinculoPeticion] = Field(min_length=1, max_length=200)
+
+
+@router_peticiones.post("")
+async def vincular_peticiones(
+    payload: VincularPeticionesRequest,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(get_current_user_or_system),
+):
+    """
+    Vincula IDs de petición con pacientes para que las filas de la tira (ID = "17" + petición) se carguen en su
+    perfil aunque no haya Excel de Vitros (cuando no se pidió creatinina). Idempotente; una petición ya vinculada
+    a otro paciente se reporta como conflicto y no se cambia.
+    """
+    resultados = []
+    for v in payload.vinculos:
+        ident = v.identificacion.strip().upper()
+        paciente = (await db.execute(select(Paciente).where(
+            (Paciente.identificacion == ident) | (Paciente.folio_tamiz == ident)))).scalars().first()
+        if not paciente:
+            resultados.append({"id_peticion": v.id_peticion, "estado": "paciente_no_encontrado"})
+            continue
+        estado = await vincular_peticion(db, v.id_peticion, paciente, "api")
+        resultados.append({"id_peticion": v.id_peticion, "estado": estado, "paciente_id": paciente.id})
+    await db.commit()
+    return {"vinculos": resultados}

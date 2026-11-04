@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    CampanaPaciente, Paciente, Prueba, ReporteGenerado, ReporteResultado, Resultado,
+    CampanaPaciente, Paciente, Peticion, Prueba, ReporteGenerado, ReporteResultado, Resultado,
 )
 from app.services.tamiz_sync import fecha_toma_tamiz
 from app.services.uc1000_parser import (
@@ -91,6 +91,7 @@ async def fusionar_paciente(db: AsyncSession, dup: Paciente, destino: Paciente,
         await db.execute(update(ReporteGenerado).where(ReporteGenerado.paciente_id == dup.id)
                          .values(paciente_id=destino.id))
         cuenta["reportes pasados al paciente del padrón"] += len(reportes)
+    await db.execute(update(Peticion).where(Peticion.paciente_id == dup.id).values(paciente_id=destino.id))
     await db.execute(delete(CampanaPaciente).where(CampanaPaciente.paciente_id == dup.id))
     await db.delete(dup)
     await db.flush()
