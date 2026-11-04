@@ -13,6 +13,7 @@ folio capturado con error o de otra escuela):
   - se elimina el paciente duplicado.
 Los reportes ya generados del duplicado pasan al paciente del padrón (con sus resultados reapuntados al
 resultado que se conserva); quedan con el contenido de cuando se generaron y se actualizan al regenerarlos.
+La fusión en sí vive en app/services/pacientes_merge.py (la comparte el alta automática desde formularios).
 
 Uso (dentro del contenedor del backend):
     python seed/unificar_duplicados_folio.py            # simulación: lista y hace rollback
@@ -31,31 +32,18 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import delete, select, update  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from app.database import AsyncSessionLocal  # noqa: E402
-from app.models import CampanaPaciente, Paciente, Prueba, ReporteGenerado, ReporteResultado, Resultado  # noqa: E402
-from app.services.tamiz_sync import fecha_toma_tamiz  # noqa: E402
-from app.services.uc1000_parser import (  # noqa: E402
-    CODIGO_ACR, CODIGO_ALB, CODIGO_CRE, FUENTE_VITROS, calculate_acr_for_patient,
+from app.models import Paciente  # noqa: E402
+from app.services.pacientes_merge import (  # noqa: E402
+    fila_respaldo as _fila, fusionar_paciente, pruebas_renales, reapuntar_reportes as _reapuntar_reportes,
 )
+
+__all__ = ["unificar", "_fila", "_reapuntar_reportes"]   # los usa seed/reunir_visitas_tamiz.py
 
 RESPALDO = "/tmp/duplicados_folio_respaldo.json"
 FOLIO_RE = re.compile(r"^[A-Z]\d{8}$")
-
-
-def _fila(r: Resultado) -> dict:
-    return {
-        "id": r.id, "paciente_id": r.paciente_id, "prueba_id": r.prueba_id, "lote_id": r.lote_id,
-        "valor": str(r.valor) if r.valor is not None else None, "valor_texto": r.valor_texto,
-        "interpretacion": r.interpretacion, "fecha_toma": str(r.fecha_toma), "fuente": r.fuente,
-        "observaciones": r.observaciones,
-    }
-
-
-async def _reapuntar_reportes(db, resultado_viejo: int, resultado_nuevo: int):
-    await db.execute(update(ReporteResultado).where(ReporteResultado.resultado_id == resultado_viejo)
-                     .values(resultado_id=resultado_nuevo))
 
 
 async def unificar(db, imprimir=print, mapa=None):
@@ -63,8 +51,7 @@ async def unificar(db, imprimir=print, mapa=None):
     cuenta = Counter()
     respaldo = []
     mapa = mapa or {}
-    pruebas = {p.codigo: p for p in (await db.execute(
-        select(Prueba).where(Prueba.codigo.in_([CODIGO_ALB, CODIGO_CRE, CODIGO_ACR])))).scalars().all()}
+    pruebas = await pruebas_renales(db)
 
     if mapa:
         # con equivalencias explícitas: cualquier paciente indicado (folio mal escrito, SYN, número, etc.)
@@ -79,57 +66,14 @@ async def unificar(db, imprimir=print, mapa=None):
 
     for dup in duplicados:
         destino_id = mapa.get(dup.identificacion, dup.identificacion)
-        real_p = (await db.execute(select(Paciente).where(
+        destino = (await db.execute(select(Paciente).where(
             (Paciente.folio_tamiz == destino_id) | (Paciente.identificacion == destino_id),
             Paciente.id != dup.id))).scalars().first()
-        if not real_p:
+        if not destino:
             cuenta["sin paciente en el padrón (se deja igual)"] += 1
             imprimir(f"  {dup.identificacion}: no existe en el padrón, se deja igual")
             continue
-        reportes = (await db.execute(
-            select(ReporteGenerado.id).where(ReporteGenerado.paciente_id == dup.id))).scalars().all()
-
-        resultados = (await db.execute(select(Resultado).where(Resultado.paciente_id == dup.id))).scalars().all()
-        respaldo.append({"duplicado": {"id": dup.id, "identificacion": dup.identificacion, "nombre": dup.nombre,
-                                       "apellido": dup.apellido, "paciente_destino_id": real_p.id},
-                         "resultados": [_fila(r) for r in resultados], "reportes": list(reportes)})
-        visitas = set()
-        for r in resultados:
-            destino = await fecha_toma_tamiz(db, real_p, r.fecha_toma)
-            existente = (await db.execute(select(Resultado).where(
-                Resultado.paciente_id == real_p.id, Resultado.prueba_id == r.prueba_id,
-                Resultado.fecha_toma == destino))).scalars().first()
-            if existente is None:
-                r.paciente_id, r.fecha_toma = real_p.id, destino
-                cuenta["resultados movidos"] += 1
-            elif r.fuente == FUENTE_VITROS and existente.fuente != FUENTE_VITROS:
-                for campo in ("valor", "valor_texto", "interpretacion", "fuente", "lote_id", "observaciones"):
-                    setattr(existente, campo, getattr(r, campo))
-                await _reapuntar_reportes(db, r.id, existente.id)
-                await db.delete(r)
-                cuenta["Vitros reemplaza a tira"] += 1
-            else:
-                await _reapuntar_reportes(db, r.id, existente.id)
-                await db.delete(r)
-                cuenta["resultado repetido descartado"] += 1
-            visitas.add(destino)
-        await db.flush()
-
-        for fecha in visitas:
-            if all(c in pruebas for c in (CODIGO_ALB, CODIGO_CRE, CODIGO_ACR)):
-                await calculate_acr_for_patient(
-                    db, real_p.id, fecha, resultados[0].lote_id if resultados else None,
-                    pruebas[CODIGO_ALB], pruebas[CODIGO_CRE], pruebas[CODIGO_ACR])
-
-        if reportes:
-            await db.execute(update(ReporteGenerado).where(ReporteGenerado.paciente_id == dup.id)
-                             .values(paciente_id=real_p.id))
-            cuenta["reportes pasados al paciente del padrón"] += len(reportes)
-        await db.execute(delete(CampanaPaciente).where(CampanaPaciente.paciente_id == dup.id))
-        await db.delete(dup)
-        await db.flush()
-        cuenta["pacientes unificados"] += 1
-
+        respaldo.append(await fusionar_paciente(db, dup, destino, pruebas, cuenta))
     return cuenta, respaldo
 
 

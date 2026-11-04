@@ -1,12 +1,15 @@
-from datetime import date
-from typing import List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user_or_system
 from app.database import get_db
+from app.models import Lote
+from app.services.excel_parser import procesar_df_tamizaje
 from app.services.tamiz_sync import CICLO_DEFAULT, sincronizar_alumnos
 
 router = APIRouter(prefix="/integraciones/tamiz", tags=["Integración tamiz-escolar"])
@@ -76,3 +79,57 @@ async def sincronizar(
     )
     await db.commit()
     return resumen
+
+
+# ---------------------------------------------------------------------------
+# Google Forms (vía n8n): alta automática de perfiles con datos personales y clínicos
+# ---------------------------------------------------------------------------
+
+router_forms = APIRouter(prefix="/integraciones/forms", tags=["Integración Google Forms"])
+
+
+class RespuestaForms(BaseModel):
+    id_respuesta: str = Field(min_length=1, max_length=120,
+                              description="Identificador estable de la respuesta (p. ej. hoja + marca temporal)")
+    campos: Dict[str, Any] = Field(description="Columna de la hoja del Forms -> valor, tal como viene en la hoja")
+
+
+class RespuestasFormsRequest(BaseModel):
+    origen: str = Field(default="google_forms", max_length=60)
+    respuestas: List[RespuestaForms] = Field(min_length=1, max_length=200)
+
+
+@router_forms.post("/respuestas")
+async def recibir_respuestas_forms(
+    payload: RespuestasFormsRequest,
+    db: AsyncSession = Depends(get_db),
+    auth=Depends(get_current_user_or_system),
+):
+    """
+    Recibe respuestas del Google Forms de tamizaje (una o varias) y crea/actualiza el perfil de cada persona,
+    uniéndola con los resultados de la tira y el Vitros que ya existan (por CURP, o por nombre exacto
+    cuando el perfil de laboratorio todavía no tenía CURP). Idempotente por `id_respuesta`.
+    Las columnas son las mismas que las del Excel del Forms. n8n solo reenvía; las reglas viven aquí.
+    """
+    df = pd.DataFrame([r.campos for r in payload.respuestas])
+    df = df.replace("", None)
+    lote = Lote(
+        nombre=f"Google Forms (n8n) {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        descripcion=f"Alta automática desde {payload.origen}: {len(payload.respuestas)} respuesta(s)",
+        usuario_id=getattr(auth, "id", None),
+        estado="procesando", total_registros=len(payload.respuestas),
+        registros_exitosos=0, registros_error=0,
+    )
+    db.add(lote)
+    await db.commit()
+    await db.refresh(lote)
+
+    out = await procesar_df_tamizaje(db, df, lote, ids_respuesta=[r.id_respuesta for r in payload.respuestas])
+    return {
+        "lote_id": lote.id,
+        "exitosos": out["resumen"]["exitosos"],
+        "erroneos": out["resumen"]["erroneos"],
+        "respuestas": out["detalles"],
+        "errores": out["errores"],
+        "por_revisar": sum(1 for d in out["detalles"] if d.get("revisar")),
+    }

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion, interpretar_valor_texto
 from app.utils.curp_validator import match_patient_identifier
+from app.services.identidad import ResolvedorIdentidad
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
 from app.services.tamiz_sync import (
@@ -623,8 +624,26 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
         await db.commit()
         return {"lote": lote, "resumen": {"exitosos": 0, "erroneos": 0}}
 
+    return await procesar_df_tamizaje(db, df, lote)
+
+
+async def procesar_df_tamizaje(db: AsyncSession, df: pd.DataFrame, lote: Lote,
+                               ids_respuesta: list | None = None) -> dict:
+    """
+    Procesa las filas de un DataFrame con las columnas del Google Forms de tamizaje: crea o actualiza el
+    perfil de cada persona (datos personales y clínicos). Lo usan la carga del Excel y el endpoint que
+    alimenta n8n. `ids_respuesta` (uno por fila) hace idempotente el reenvío de la misma respuesta.
+    Hace commit y devuelve {"lote", "resumen", "detalles"}.
+    """
+    errors = []
+    exitosos = 0
+    erroneos = 0
+    detalles = []
+    total_filas = len(df)
+    resolvedor = ResolvedorIdentidad(db)
+
     cols = {normalize_column_name(col): col for col in df.columns}
-    
+
     mappings = {
         "fecha": ["fecha"],
         "nombre": ["nombre"],
@@ -662,12 +681,10 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
                 break
         resolved_meta[key] = found_col
     
-    print(f"DEBUG EXCEL COLS: {cols}")
-    print(f"DEBUG RESOLVED META: {resolved_meta}")
-
-    for index, row in df.iterrows():
+    for pos, (index, row) in enumerate(df.iterrows()):
         fila_num = index + 2
-        
+        id_respuesta = str(ids_respuesta[pos]) if ids_respuesta else None
+
         curp = str(row[resolved_meta["curp"]]).strip().upper() if resolved_meta.get("curp") and pd.notna(row[resolved_meta["curp"]]) else ""
         nombre = str(row[resolved_meta["nombre"]]).strip() if resolved_meta.get("nombre") and pd.notna(row[resolved_meta["nombre"]]) else ""
         ap_pat = str(row[resolved_meta["apellido_paterno"]]).strip() if resolved_meta.get("apellido_paterno") and pd.notna(row[resolved_meta["apellido_paterno"]]) else ""
@@ -679,17 +696,21 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
         if not curp and not nombre:
             erroneos += 1
             errors.append({"fila": fila_num, "columna": "identidad", "error": "Falta CURP y Nombre", "valor": ""})
+            detalles.append({"id_respuesta": id_respuesta, "fila": fila_num, "accion": "error"})
             continue
-
-        paciente_id_val = match_patient_identifier(curp, nombre, ap_pat, sexo)
-        if not paciente_id_val:
-            paciente_id_val = curp if curp else f"{nombre.split()[0].upper()[:4]}{ap_pat.upper()[:2]}XXXXXX"
-
-        paciente_res = await db.execute(select(Paciente).where(Paciente.identificacion == paciente_id_val))
-        paciente = paciente_res.scalar_one_or_none()
 
         fn_raw = row[resolved_meta["fecha_nacimiento"]] if resolved_meta.get("fecha_nacimiento") else None
         fn = parse_date(fn_raw) if fn_raw else None
+
+        # A qué perfil pertenece la respuesta (CURP, perfil de laboratorio previo con el mismo nombre, o nuevo)
+        identidad = await resolvedor.resolver(curp, nombre, ap_pat, ap_mat, sexo, fn)
+        paciente, paciente_id_val = identidad.paciente, identidad.identificacion
+
+        if paciente is not None and id_respuesta and paciente.questionnaire_source_id == id_respuesta:
+            exitosos += 1          # la misma respuesta ya se procesó: no se repite
+            detalles.append({"id_respuesta": id_respuesta, "fila": fila_num, "accion": "sin_cambios",
+                             "paciente_id": paciente.id})
+            continue
 
         tel = str(row[resolved_meta["telefono"]]).strip() if resolved_meta.get("telefono") and pd.notna(row[resolved_meta["telefono"]]) else None
         email = str(row[resolved_meta["email"]]).strip() if resolved_meta.get("email") and pd.notna(row[resolved_meta["email"]]) else None
@@ -741,11 +762,12 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
             )
             db.add(paciente)
         else:
-            if nombre: paciente.nombre = nombre
-            if ap_pat: paciente.apellido = ap_pat
-            if ap_mat: paciente.apellido_materno = ap_mat
-            if fn: paciente.fecha_nacimiento = fn
-            if sexo: paciente.sexo = sexo
+            if not paciente.folio_tamiz:     # nombre, nacimiento y sexo de alumnos del padrón los manda tamiz
+                if nombre: paciente.nombre = nombre
+                if ap_pat: paciente.apellido = ap_pat
+                if ap_mat: paciente.apellido_materno = ap_mat
+                if fn: paciente.fecha_nacimiento = fn
+                if sexo: paciente.sexo = sexo
             if tel: paciente.telefono = tel
             if email: paciente.email = email
             if domicilio: paciente.domicilio = domicilio
@@ -760,6 +782,12 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
             if c_agua: paciente.cocina_agua_llave = c_agua
             if pad: paciente.padecimientos = pad
 
+        if id_respuesta:
+            paciente.questionnaire_source_id = id_respuesta
+        await db.flush()
+        detalles.append({"id_respuesta": id_respuesta, "fila": fila_num, "accion": identidad.accion,
+                         "paciente_id": paciente.id, "fusionados": identidad.fusionados,
+                         "revisar": identidad.revisar})
         exitosos += 1
 
     lote.total_registros = total_filas
@@ -778,5 +806,6 @@ async def process_tamizaje_excel(db: AsyncSession, file_content: bytes, filename
 
     await db.commit()
     await db.refresh(lote)
-    return {"lote": lote, "resumen": {"exitosos": exitosos, "erroneos": erroneos}}
+    return {"lote": lote, "resumen": {"exitosos": exitosos, "erroneos": erroneos},
+            "detalles": detalles, "errores": errors}
 
