@@ -72,6 +72,31 @@ def parse_date(date_val) -> date | None:
             continue
     return None
 
+def parse_decimal(valor) -> float | None:
+    """Primer número de un texto ("1,4", "50 kg", "14años"); acepta coma o punto decimal. None si no hay."""
+    if valor is None:
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    m = re.search(r"\d+(?:[.,]\d+)?", str(valor))
+    return float(m.group(0).replace(",", ".")) if m else None
+
+
+def normalizar_estatura_cm(valor) -> float | None:
+    """Estatura en centímetros. Una captura menor a 3 se toma como metros (1,4 -> 140 cm); fuera de 30-250 cm -> None."""
+    n = parse_decimal(valor)
+    if n is None:
+        return None
+    if n < 3:
+        n *= 100
+    return round(n, 1) if 30 <= n <= 250 else None
+
+
+def normalizar_peso_kg(valor) -> float | None:
+    n = parse_decimal(valor)
+    return round(n, 1) if n is not None and 1 <= n <= 400 else None
+
+
 def calcular_interpretacion(
     valor: float,
     valor_min: float,

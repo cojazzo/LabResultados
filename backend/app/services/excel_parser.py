@@ -9,6 +9,7 @@ from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion, interpretar_valor_texto
 from app.utils.curp_validator import match_patient_identifier
 from app.services.identidad import ResolvedorIdentidad
+from app.utils.validators import normalizar_estatura_cm, normalizar_peso_kg
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
 from app.services.uc1000_parser import calculate_acr_for_patient, _get_or_create_prueba
 from app.services.tamiz_sync import (
@@ -713,7 +714,7 @@ async def procesar_df_tamizaje(db: AsyncSession, df: pd.DataFrame, lote: Lote,
             continue
 
         tel = str(row[resolved_meta["telefono"]]).strip() if resolved_meta.get("telefono") and pd.notna(row[resolved_meta["telefono"]]) else None
-        email = str(row[resolved_meta["email"]]).strip() if resolved_meta.get("email") and pd.notna(row[resolved_meta["email"]]) else None
+        email = str(row[resolved_meta["email"]]).strip().lower() if resolved_meta.get("email") and pd.notna(row[resolved_meta["email"]]) else None
         domicilio = str(row[resolved_meta["domicilio"]]).strip() if resolved_meta.get("domicilio") and pd.notna(row[resolved_meta["domicilio"]]) else None
         cp = str(row[resolved_meta["codigo_postal"]]).strip() if resolved_meta.get("codigo_postal") and pd.notna(row[resolved_meta["codigo_postal"]]) else None
         edo_res = str(row[resolved_meta["estado_residencia"]]).strip() if resolved_meta.get("estado_residencia") and pd.notna(row[resolved_meta["estado_residencia"]]) else None
@@ -725,18 +726,12 @@ async def procesar_df_tamizaje(db: AsyncSession, df: pd.DataFrame, lote: Lote,
         pad = str(row[resolved_meta["padecimientos"]]).strip() if resolved_meta.get("padecimientos") and pd.notna(row[resolved_meta["padecimientos"]]) else None
         
         peso_raw = row[resolved_meta["peso"]] if resolved_meta.get("peso") else None
-        peso = None
-        if peso_raw:
-            try:
-                peso = Decimal(str(peso_raw))
-            except: pass
-            
+        peso_kg = normalizar_peso_kg(peso_raw)
+        peso = Decimal(str(peso_kg)) if peso_kg is not None else None
+
         est_raw = row[resolved_meta["estatura"]] if resolved_meta.get("estatura") else None
-        estatura = None
-        if est_raw:
-            try:
-                estatura = Decimal(str(est_raw))
-            except: pass
+        est_cm = normalizar_estatura_cm(est_raw)          # "1,4" (metros) -> 140 cm; el sistema guarda centímetros
+        estatura = Decimal(str(est_cm)) if est_cm is not None else None
 
         if not paciente:
             paciente = Paciente(
