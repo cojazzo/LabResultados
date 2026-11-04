@@ -1,0 +1,331 @@
+{
+  "name": "LabResultados - Alta automatica de perfiles (Google Forms)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  },
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "nota-config",
+      "name": "Nota: configuracion requerida",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -420
+      ],
+      "parameters": {
+        "width": 640,
+        "height": 330,
+        "content": "## Antes de activar (el workflow se entrega INACTIVO)\n1. **Google Sheets Trigger**: asignar la credencial OAuth2 de Google y elegir la hoja de respuestas del Forms (documento y hoja). El valor actual es un marcador: REEMPLAZAR.\n2. **Backend: alta de perfiles**: crear una credencial **Header Auth** (nombre sugerido: `LabResultados API (clave de sistema)`) con header `Authorization` y como valor la `SYSTEM_API_KEY` del `.env` del backend (sin `Bearer`). No pegar la clave en el workflow.\n3. Probar con una fila **sintética** (CURP ficticia, p. ej. TEST010101HASAAA01). No usar datos reales hasta tener aprobación del responsable del laboratorio.\n4. En Settings del workflow se desactivó el guardado de ejecuciones (llevan datos personales y de salud). La trazabilidad queda en LabResultados (Lotes + id_respuesta del perfil).\n5. Configurar el canal del aviso al equipo técnico (nodos al final de cada rama de error)."
+      }
+    },
+    {
+      "id": "nota-backend",
+      "name": "Nota: contrato con el backend",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        -420
+      ],
+      "parameters": {
+        "width": 640,
+        "height": 250,
+        "content": "## Contrato con el backend\n**POST /api/integraciones/forms/respuestas** (Authorization = clave de sistema)\nEnvia: `{ origen, respuestas: [ { id_respuesta, campos: {columna del Forms: valor} } ] }`\nDevuelve: `{ lote_id, exitosos, erroneos, por_revisar, respuestas: [ { id_respuesta, accion, paciente_id } ] }`\nIdempotencia: `id_respuesta` (reenviar la misma respuesta no duplica nada).\nn8n solo reenvia las columnas; el backend decide a que perfil pertenece cada respuesta y une los resultados de tira y Vitros. n8n no valida ni modifica datos clinicos."
+      }
+    },
+    {
+      "id": "trg-forms",
+      "name": "Nueva respuesta del Forms",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        0
+      ],
+      "parameters": {
+        "event": "rowAdded",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REEMPLAZAR_ID_DE_LA_HOJA_DE_RESPUESTAS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REEMPLAZAR_NOMBRE_O_GID_DE_LA_HOJA"
+        }
+      }
+    },
+    {
+      "id": "cod-preparar",
+      "name": "Preparar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Se envian las columnas tal cual; el backend las mapea. Aqui no se calcula nada clinico.\nconst fila = { ...$json };\nconst rowNumber = fila.row_number;\ndelete fila.row_number;\nconst marca = fila['Marca temporal'] || fila['Timestamp'] || '';\nif (!marca && !rowNumber) {\n  throw new Error('Fila sin Marca temporal ni numero de fila: no se puede identificar la respuesta');\n}\nconst id = `forms|${rowNumber ?? ''}|${marca}`.slice(0, 120);\nreturn { json: { id_respuesta: id, campos: fila } };"
+      }
+    },
+    {
+      "id": "agg-respuestas",
+      "name": "Agrupar respuestas",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        40,
+        0
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "respuestas",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-alta",
+      "name": "Backend: alta de perfiles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/integraciones/forms/respuestas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ origen: 'google_forms', respuestas: $json.respuestas }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "if-revisar",
+      "name": "Hay errores o perfiles por revisar",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-erroneos",
+              "leftValue": "={{ $json.erroneos }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "cond-revisar",
+              "leftValue": "={{ $json.por_revisar }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cod-aviso",
+      "name": "Armar aviso (sin datos personales)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Solo conteos y numero de lote: nunca nombres, CURP ni datos de salud.\nconst j = $input.first().json;\nreturn [{ json: {\n  asunto: `Alta automatica desde Forms: ${j.erroneos} con error, ${j.por_revisar} por revisar`,\n  detalle: `Lote ${j.lote_id}. Procesadas correctamente: ${j.exitosos}. Revisar en LabResultados > Lotes.`\n} }];"
+      }
+    },
+    {
+      "id": "noop-aviso",
+      "name": "Notificar al equipo tecnico (configurar canal)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        -120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "noop-ok",
+      "name": "Sin pendientes",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        880,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "trg-error",
+      "name": "Error del workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        360
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "cod-aviso-error",
+      "name": "Armar aviso de error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        360
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Sin datos del payload: solo identificadores de la ejecucion y el mensaje de error truncado.\nconst j = $input.first().json;\nconst msg = String((j.execution && j.execution.error && j.execution.error.message) || '').slice(0, 200);\nreturn [{ json: {\n  asunto: `Fallo en ${j.workflow && j.workflow.name}`,\n  detalle: `Ejecucion ${j.execution && j.execution.id}, nodo: ${j.execution && j.execution.lastNodeExecuted}. ${msg}`\n} }];"
+      }
+    },
+    {
+      "id": "noop-aviso-error",
+      "name": "Notificar fallo al equipo tecnico (configurar canal)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        40,
+        360
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Nueva respuesta del Forms": {
+      "main": [
+        [
+          {
+            "node": "Preparar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Agrupar respuestas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar respuestas": {
+      "main": [
+        [
+          {
+            "node": "Backend: alta de perfiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend: alta de perfiles": {
+      "main": [
+        [
+          {
+            "node": "Hay errores o perfiles por revisar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hay errores o perfiles por revisar": {
+      "main": [
+        [
+          {
+            "node": "Armar aviso (sin datos personales)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar aviso (sin datos personales)": {
+      "main": [
+        [
+          {
+            "node": "Notificar al equipo tecnico (configurar canal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error del workflow": {
+      "main": [
+        [
+          {
+            "node": "Armar aviso de error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar aviso de error": {
+      "main": [
+        [
+          {
+            "node": "Notificar fallo al equipo tecnico (configurar canal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
