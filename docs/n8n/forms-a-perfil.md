@@ -66,6 +66,10 @@ repetir ese ajuste (Settings → Error Workflow).
 Propiedad no verificada: el intervalo de sondeo del Google Sheets Trigger (`pollTimes`) no aparece en el esquema del MCP;
 el workflow no lo define y usa el valor por defecto del trigger. Revisar en la interfaz de n8n.
 
+Compatibilidad: la instancia corre n8n 2.30.5, que soporta HTTP Request hasta la 4.4 e If hasta la 2.3; por eso el
+workflow usa HTTP Request 4.2 e If 2.3 (la base de datos del MCP trae versiones más nuevas que la instancia).
+Al crear nodos con el MCP, verificar las versiones contra la instancia.
+
 ## Riesgos y decisiones
 
 - **Datos personales y de salud**: el workflow desactiva el guardado de ejecuciones (éxito y error) para no dejar

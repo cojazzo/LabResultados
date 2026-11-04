@@ -94,7 +94,7 @@
       "id": "http-alta",
       "name": "Backend: alta de perfiles",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.5,
+      "typeVersion": 4.2,
       "position": [
         320,
         0
@@ -120,7 +120,7 @@
       "id": "if-revisar",
       "name": "Hay errores o perfiles por revisar",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2.4,
+      "typeVersion": 2.3,
       "position": [
         600,
         0
