@@ -2,6 +2,7 @@ export default function StatCard({
   icon: Icon,
   value,
   label,
+  hint,
   trend,
   trendUp,
   color = 'from-primary-500 to-primary-700',
@@ -24,6 +25,7 @@ export default function StatCard({
             <p className="text-3xl font-extrabold text-slate-800 animate-count-up">
               {value}
             </p>
+            {hint && <p className="text-xs text-slate-500 leading-snug">{hint}</p>}
             {trend !== undefined && (
               <div className={`flex items-center gap-1 text-xs font-medium ${trendUp ? 'text-emerald-600' : 'text-red-500'}`}>
                 <span>{trendUp ? '↑' : '↓'}</span>

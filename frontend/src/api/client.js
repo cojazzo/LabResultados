@@ -136,11 +136,17 @@ export const getDashboardResumen = (filters = {}) =>
 export const getDashboardTendencia = (params = {}) =>
   client.get('/dashboard/tendencia', { params })
 
-export const getDashboardAnormales = () =>
-  client.get('/dashboard/anormales')
+export const getDashboardAnormales = (params = {}) =>
+  client.get('/dashboard/anormales', { params })
 
-export const getDashboardTopPruebas = (limit = 10) =>
-  client.get('/dashboard/top-pruebas', { params: { limit } })
+export const getDashboardRiesgoKdigo = (params = {}) =>
+  client.get('/dashboard/riesgo-kdigo', { params })
+
+export const getDashboardTopPruebas = (limit = 10, params = {}) =>
+  client.get('/dashboard/top-pruebas', { params: { limit, ...params } })
+
+export const getDashboardRecientes = (limit = 15) =>
+  client.get('/dashboard/recientes', { params: { limit } })
 
 export const getDashboardMapaHexbin = () =>
   client.get('/dashboard/mapa-hexbin')
