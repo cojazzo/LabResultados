@@ -8,6 +8,7 @@ import EnviosPage from './pages/EnviosPage.jsx'
 import CatalogoPage from './pages/CatalogoPage.jsx'
 import PerfilesPage from './pages/PerfilesPage.jsx'
 import PerfilIndividualPage from './pages/PerfilIndividualPage.jsx'
+import NuevoPacientePage from './pages/NuevoPacientePage.jsx'
 import QuimicosPage from './pages/QuimicosPage.jsx'
 import UsuariosPage from './pages/UsuariosPage.jsx'
 import ReportesExcelPage from './pages/ReportesExcelPage.jsx'
@@ -70,6 +71,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <PerfilesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/perfiles/nuevo"
+        element={
+          <ProtectedRoute>
+            <NuevoPacientePage />
           </ProtectedRoute>
         }
       />

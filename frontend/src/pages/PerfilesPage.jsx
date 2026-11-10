@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, User, ChevronRight } from 'lucide-react'
+import { Search, User, ChevronRight, UserPlus } from 'lucide-react'
 import { Link } from 'react-router'
 import api from '../api/client.js'
 import Pagination from '../components/Pagination'
@@ -50,6 +50,12 @@ export default function PerfilesPage() {
           <h1 className="text-2xl font-bold text-slate-800">Perfiles de Pacientes</h1>
           <p className="text-slate-500 text-sm">Gestiona el historial y datos de pacientes</p>
         </div>
+        <Link
+          to="/perfiles/nuevo"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors"
+        >
+          <UserPlus className="w-4 h-4" /> Nuevo paciente
+        </Link>
       </div>
 
       {/* Barra de búsqueda */}

@@ -17,6 +17,7 @@ from app.routes.envios import router as envios_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.catalogos import pruebas_router
 from app.routes.pacientes import router as pacientes_router
+from app.routes.pacientes_alta import router as pacientes_alta_router
 from app.routes.automation import router as automation_router
 from app.routes.quimicos import router as quimicos_router
 from app.routes.campanas import router as campanas_router
@@ -108,6 +109,7 @@ app.include_router(envios_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(pruebas_router, prefix="/api")
 app.include_router(pacientes_router, prefix="/api")
+app.include_router(pacientes_alta_router, prefix="/api")
 
 app.include_router(automation_router, prefix="/api")
 app.include_router(quimicos_router, prefix="/api")

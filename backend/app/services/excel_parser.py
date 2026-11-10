@@ -9,6 +9,7 @@ from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import normalize_column_name, parse_date, validate_email, calcular_interpretacion, interpretar_valor_texto
 from app.utils.curp_validator import match_patient_identifier
 from app.services.identidad import ResolvedorIdentidad
+from app.services.registro_paciente import aplicar_datos
 from app.services.peticiones import normalizar_peticion, vincular_peticion
 from app.utils.validators import normalizar_estatura_cm, normalizar_peso_kg
 # Importar funciones compartidas de cálculo ACR (jerarquía de fuentes)
@@ -739,49 +740,13 @@ async def procesar_df_tamizaje(db: AsyncSession, df: pd.DataFrame, lote: Lote,
         est_cm = normalizar_estatura_cm(est_raw)          # "1,4" (metros) -> 140 cm; el sistema guarda centímetros
         estatura = Decimal(str(est_cm)) if est_cm is not None else None
 
-        if not paciente:
-            paciente = Paciente(
-                identificacion=paciente_id_val,
-                nombre=nombre,
-                apellido=ap_pat,
-                apellido_materno=ap_mat,
-                fecha_nacimiento=fn,
-                sexo=sexo,
-                telefono=tel,
-                email=email,
-                domicilio=domicilio,
-                codigo_postal=cp,
-                estado_residencia=edo_res,
-                municipio_residencia=mun_res,
-                peso=peso,
-                estatura=estatura,
-                derechohabiencia=derecho,
-                suplemento_detalle=sup,
-                tipo_agua=t_agua,
-                cocina_agua_llave=c_agua,
-                padecimientos=pad
-            )
-            db.add(paciente)
-        else:
-            if not paciente.folio_tamiz:     # nombre, nacimiento y sexo de alumnos del padrón los manda tamiz
-                if nombre: paciente.nombre = nombre
-                if ap_pat: paciente.apellido = ap_pat
-                if ap_mat: paciente.apellido_materno = ap_mat
-                if fn: paciente.fecha_nacimiento = fn
-                if sexo: paciente.sexo = sexo
-            if tel: paciente.telefono = tel
-            if email: paciente.email = email
-            if domicilio: paciente.domicilio = domicilio
-            if cp: paciente.codigo_postal = cp
-            if edo_res: paciente.estado_residencia = edo_res
-            if mun_res: paciente.municipio_residencia = mun_res
-            if peso is not None: paciente.peso = peso
-            if estatura is not None: paciente.estatura = estatura
-            if derecho: paciente.derechohabiencia = derecho
-            if sup: paciente.suplemento_detalle = sup
-            if t_agua: paciente.tipo_agua = t_agua
-            if c_agua: paciente.cocina_agua_llave = c_agua
-            if pad: paciente.padecimientos = pad
+        paciente = await aplicar_datos(db, paciente, paciente_id_val, {
+            "nombre": nombre, "apellido": ap_pat, "apellido_materno": ap_mat, "fecha_nacimiento": fn, "sexo": sexo,
+            "telefono": tel, "email": email, "domicilio": domicilio, "codigo_postal": cp,
+            "estado_residencia": edo_res, "municipio_residencia": mun_res, "peso": peso, "estatura": estatura,
+            "derechohabiencia": derecho, "suplemento_detalle": sup, "tipo_agua": t_agua,
+            "cocina_agua_llave": c_agua, "padecimientos": pad,
+        })
 
         if id_respuesta:
             paciente.questionnaire_source_id = id_respuesta
