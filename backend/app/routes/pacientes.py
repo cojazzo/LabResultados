@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.core.security import get_current_user_or_system
 from app.models import Paciente
 from pydantic import BaseModel
 from typing import List, Optional
@@ -73,12 +74,15 @@ class PacienteDetalleResponse(BaseModel):
         from_attributes = True
 
 @router.post("/pacientes/cuestionario", status_code=status.HTTP_200_OK)
-async def recibir_cuestionario(payload: CuestionarioClinicoInput, db: AsyncSession = Depends(get_db)):
+async def recibir_cuestionario(
+    payload: CuestionarioClinicoInput,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(get_current_user_or_system),
+):
     """
-    Recibe la información clínica del cuestionario de n8n.
+    Recibe la información clínica del cuestionario de n8n (clave de sistema) o de un usuario con sesión.
     Realiza un upsert del paciente basado en su CURP (identificacion).
     """
-    print(f"DEBUG INCOMING PAYLOAD: {payload.model_dump()}")
     curp_normalized = payload.curp.strip().upper()
     if not curp_normalized:
         raise HTTPException(
@@ -160,7 +164,7 @@ async def recibir_cuestionario(payload: CuestionarioClinicoInput, db: AsyncSessi
     }
 
 @router.get("/pacientes/{id}", response_model=PacienteDetalleResponse)
-async def obtener_paciente(id: int, db: AsyncSession = Depends(get_db)):
+async def obtener_paciente(id: int, db: AsyncSession = Depends(get_db), _auth=Depends(get_current_user_or_system)):
     """
     Obtiene el perfil clínico detallado del paciente.
     """
@@ -175,7 +179,12 @@ async def obtener_paciente(id: int, db: AsyncSession = Depends(get_db)):
     return paciente
 
 @router.patch("/pacientes/{id}/cuestionario", response_model=PacienteDetalleResponse)
-async def actualizar_cuestionario(id: int, payload: PacienteCuestionarioUpdate, db: AsyncSession = Depends(get_db)):
+async def actualizar_cuestionario(
+    id: int,
+    payload: PacienteCuestionarioUpdate,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(get_current_user_or_system),
+):
     """
     Actualiza manualmente los datos del cuestionario clínico de un paciente.
     """

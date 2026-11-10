@@ -29,7 +29,7 @@ async def test_crea_con_datos_normalizados(client, auth_headers):
     assert r.status_code == 200, r.text
     j = r.json()
     assert j["accion"] == "creado" and j["identificacion"] == "TEST050505MASAAA05"
-    p = (await client.get(f"/api/pacientes/{j['paciente_id']}")).json()
+    p = (await client.get(f"/api/pacientes/{j['paciente_id']}", headers=auth_headers)).json()
     assert p["estatura"] == 140.0 and p["peso"] == 50.0            # 1.4 m -> 140 cm
     assert p["sexo"] == "F" and p["email"] == "sintetico@example.test" and p["telefono"] == "4490000000"
     assert p["padecimientos"] == "Obesidad, Diabetes" and p["apellido_materno"] == "SINTETICO"
@@ -44,13 +44,13 @@ async def test_si_ya_existe_pide_confirmacion_y_luego_actualiza(client, auth_hea
     assert r.status_code == 409
     d = r.json()["detail"]
     assert d["codigo"] == "paciente_existente" and d["paciente_id"] == creado["paciente_id"]
-    antes = (await client.get(f"/api/pacientes/{creado['paciente_id']}")).json()
+    antes = (await client.get(f"/api/pacientes/{creado['paciente_id']}", headers=auth_headers)).json()
     assert antes["telefono"] == "4490000000"                        # el 409 no cambió nada
 
     r = await client.post("/api/pacientes", json={**base, "telefono": "4491111111", "confirmar_actualizacion": True},
                           headers=auth_headers)
     assert r.status_code == 200 and r.json()["accion"] == "actualizado"
-    assert (await client.get(f"/api/pacientes/{creado['paciente_id']}")).json()["telefono"] == "4491111111"
+    assert (await client.get(f"/api/pacientes/{creado['paciente_id']}", headers=auth_headers)).json()["telefono"] == "4491111111"
 
 
 @pytest.mark.asyncio
@@ -71,11 +71,11 @@ async def test_perfil_de_laboratorio_sin_curp_adopta_la_curp(client, auth_header
     assert r.status_code == 409
     d = r.json()["detail"]
     assert d["accion"] == "adoptado" and d["paciente_id"] == lab_id
-    assert (await client.get(f"/api/pacientes/{lab_id}")).json()["identificacion"] == "SYN-ZZZZZZZZZZZZZZ"  # sin cambios
+    assert (await client.get(f"/api/pacientes/{lab_id}", headers=auth_headers)).json()["identificacion"] == "SYN-ZZZZZZZZZZZZZZ"  # sin cambios
 
     r = await client.post("/api/pacientes", json={**body, "confirmar_actualizacion": True}, headers=auth_headers)
     assert r.status_code == 200 and r.json()["accion"] == "adoptado" and r.json()["paciente_id"] == lab_id
-    adoptado = (await client.get(f"/api/pacientes/{lab_id}")).json()
+    adoptado = (await client.get(f"/api/pacientes/{lab_id}", headers=auth_headers)).json()
     assert adoptado["identificacion"] == "TEST070707MASCCC07" and adoptado["peso"] == 50.0     # mismo perfil, ya con CURP
 
 
