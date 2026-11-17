@@ -277,3 +277,51 @@ class CampanaPaciente(Base):
         UniqueConstraint("campana_id", "paciente_id", name="uq_campana_paciente"),
         Index("idx_campana_pacientes_campana", "campana_id"),
     )
+
+
+class ExamenOrina(Base):
+    """
+    Examen General de Orina (EGO) de una persona en una fecha de toma.
+
+    Lo captura el químico: examen físico (macroscópico) y microscópico (sedimento). El examen químico
+    corresponde a la tira reactiva; mientras la carga del UC-1000 no llene estos campos, el químico los
+    puede capturar a mano. Solo se reporta EGO a quien tiene este registro.
+    Los valores son texto porque la tira y el sedimento son semicuantitativos ("Negativo", "++", "0-2").
+    """
+    __tablename__ = "examenes_orina"
+
+    id = Column(Integer, primary_key=True, index=True)
+    paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False, index=True)
+    fecha_toma = Column(Date, nullable=False)
+    # Examen físico
+    color = Column(String, nullable=True)
+    aspecto = Column(String, nullable=True)
+    # Examen químico (tira reactiva)
+    glucosa = Column(String, nullable=True)
+    bilirrubina = Column(String, nullable=True)
+    cetonas = Column(String, nullable=True)
+    densidad = Column(String, nullable=True)
+    sangre = Column(String, nullable=True)
+    ph = Column(String, nullable=True)
+    proteinas = Column(String, nullable=True)
+    urobilinogeno = Column(String, nullable=True)
+    nitritos = Column(String, nullable=True)
+    leucocitos_esterasa = Column(String, nullable=True)
+    quimico_fuente = Column(String, default="manual")  # manual | tira_uc1000
+    # Examen microscópico
+    bacterias = Column(String, nullable=True)
+    celulas_epiteliales = Column(String, nullable=True)
+    leucocitos_campo = Column(String, nullable=True)
+    sedimento = Column(Text, nullable=True)
+    observaciones = Column(Text, nullable=True)
+    quimico_id = Column(Integer, ForeignKey("quimicos.id"), nullable=True)
+    capturado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    paciente = relationship("Paciente")
+    quimico = relationship("Quimico")
+
+    __table_args__ = (
+        UniqueConstraint("paciente_id", "fecha_toma", name="uq_examen_orina_paciente_fecha"),
+    )

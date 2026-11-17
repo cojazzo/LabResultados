@@ -40,6 +40,7 @@ from app.models import Lote, Paciente, Prueba, Resultado
 from app.utils.validators import calcular_interpretacion, interpretar_valor_texto
 from app.utils.acr import cota_acr, texto_cota, observacion_cota
 from app.services.peticiones import paciente_por_peticion
+from app.services.ego_tira import mapa_columnas, extraer_quimico, precargar_quimico
 from app.services.tamiz_sync import (
     SugeridorFolios, normalizar_folio, resolver_folio, mensaje_folio_desconocido, fecha_toma_tamiz,
 )
@@ -440,7 +441,7 @@ async def process_uc1000_csv(
 ) -> Lote:
     """
     Lee el CSV del UC-1000 y carga los resultados de albúmina y creatinina
-    de tira reactiva. Respeta la jerarquía Vitros > Tira para no sobreescribir
+    de tira reactiva, y precarga el examen químico del EGO (ver ego_tira.py). Respeta la jerarquía Vitros > Tira para no sobreescribir
     valores de mayor calidad. Calcula el ACR automáticamente.
     """
     # 1. Crear lote
@@ -502,6 +503,9 @@ async def process_uc1000_csv(
 
     sugeridor = SugeridorFolios(db)
 
+    # Columnas del examen químico (glucosa, pH, densidad…) para precargar el EGO, ubicadas por encabezado
+    columnas_ego = mapa_columnas(reader[0], reader[1]) if len(reader) > 1 else {}
+
     # 4. Procesar cada fila
     filas_contadas = 0
     for row_idx, row in enumerate(data_rows):
@@ -550,6 +554,9 @@ async def process_uc1000_csv(
         # en tamiz, para que la tira y la confirmación de Vitros caigan en la misma visita.
         if normalizar_folio(id_valor) or paciente.folio_tamiz:
             fecha_toma = await fecha_toma_tamiz(db, paciente, fecha_toma)
+
+        # Examen químico de la tira -> EGO (solo se reporta si el químico lo valida)
+        await precargar_quimico(db, paciente.id, fecha_toma, extraer_quimico(row, columnas_ego))
 
         # Parsear valores numéricos
         alb_num   = _parse_numeric(alb_raw)

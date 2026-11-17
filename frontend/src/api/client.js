@@ -187,3 +187,17 @@ export const updateUsuario = (id, data) => client.put(`/auth/users/${id}`, data)
 export const toggleUsuarioActivo = (id) => client.patch(`/auth/users/${id}/toggle-active`)
 
 export default client
+
+// ── Examen General de Orina (EGO) ─────────────────────────────────
+export const getEgoCampos = () => client.get('/ego/campos')
+
+export const getEgoPendientes = (fecha) =>
+  client.get('/ego/pendientes', { params: fecha ? { fecha } : {} })
+
+export const getEgo = (pacienteId, fechaToma) =>
+  client.get('/ego', { params: { paciente_id: pacienteId, fecha_toma: fechaToma } })
+
+export const guardarEgo = (data) => client.put('/ego', data)
+
+export const descargarEgoPdf = (id) =>
+  client.get(`/ego/${id}/pdf`, { responseType: 'blob' })

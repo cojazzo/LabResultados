@@ -20,6 +20,7 @@ from app.routes.pacientes import router as pacientes_router
 from app.routes.pacientes_alta import router as pacientes_alta_router
 from app.routes.automation import router as automation_router
 from app.routes.quimicos import router as quimicos_router
+from app.routes.ego import router as ego_router
 from app.routes.campanas import router as campanas_router
 from app.routes.integraciones import router as integraciones_router, router_forms as integraciones_forms_router, router_peticiones as integraciones_peticiones_router
 
@@ -113,6 +114,7 @@ app.include_router(pacientes_alta_router, prefix="/api")
 
 app.include_router(automation_router, prefix="/api")
 app.include_router(quimicos_router, prefix="/api")
+app.include_router(ego_router, prefix="/api")
 app.include_router(campanas_router, prefix="/api")
 app.include_router(integraciones_router, prefix="/api")
 app.include_router(integraciones_forms_router, prefix="/api")

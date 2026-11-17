@@ -13,6 +13,7 @@ import QuimicosPage from './pages/QuimicosPage.jsx'
 import UsuariosPage from './pages/UsuariosPage.jsx'
 import ReportesExcelPage from './pages/ReportesExcelPage.jsx'
 import CampanasPage from './pages/CampanasPage.jsx'
+import EgoPage from './pages/EgoPage.jsx'
 
 export default function App() {
   return (
@@ -55,6 +56,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <CatalogoPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ego"
+        element={
+          <ProtectedRoute>
+            <EgoPage />
           </ProtectedRoute>
         }
       />
