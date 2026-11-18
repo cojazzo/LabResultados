@@ -119,7 +119,7 @@ def generar_pdf_ego(examen: ExamenOrina) -> bytes:
 
     # Pie
     quimico = examen.quimico
-    # El químico responsable es opcional: sin él no se imprime la línea de "Validado por"
+    # Los exámenes guardados siempre traen químico; la guarda cubre registros antiguos sin él
     validado = (f"<b>Validado por:</b> {escape(quimico.nombre_completo)} (Cédula: {escape(quimico.cedula)})"
                 if quimico else "")
     pie = Table([[

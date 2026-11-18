@@ -3,8 +3,8 @@ Examen General de Orina (EGO).
 
 Cualquier usuario (técnico, químico o administrador) captura el examen físico y microscópico (y el químico
 mientras la tira no lo llene) de las personas con tira del día. Al guardar, el examen toma folio y su PDF queda
-disponible; el químico responsable es opcional y, si se indica, firma el reporte. Solo se reporta EGO a quien
-tiene un examen guardado.
+disponible. El químico que realizó el examen (autor del formato que el técnico transcribe) es obligatorio y firma
+el reporte. Solo se reporta EGO a quien tiene un examen guardado.
 """
 
 from datetime import date
@@ -52,8 +52,8 @@ class ValoresEgo(BaseModel):
 class EgoGuardar(ValoresEgo):
     paciente_id: int
     fecha_toma: date
-    # Químico responsable (opcional): si se indica, firma el reporte ("Validado por"). Sin él, el reporte
-    # se genera igual al guardar, sin esa línea.
+    # Químico que realizó el examen (escribió el formato que el técnico transcribe): firma el reporte
+    # ("Validado por"). Es obligatorio y debe estar activo.
     quimico_id: Optional[int] = None
 
 class EgoResponse(ValoresEgo):
@@ -183,18 +183,17 @@ async def guardar_ego(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Crea o actualiza el EGO de una persona en una fecha de toma. Cualquier usuario con sesión puede guardarlo y,
-    al guardar, el examen toma folio y su PDF queda disponible. El químico responsable es opcional: si se indica
-    (debe estar activo) aparece como "Validado por" en el reporte. Se registra quién capturó el examen.
+    Crea o actualiza el EGO de una persona en una fecha de toma. El químico escribe el formato y el técnico lo
+    transcribe: cualquier usuario con sesión puede guardarlo, indicando el químico que realizó el examen (activo),
+    que aparece como "Validado por" en el reporte. Al guardar toma folio y su PDF queda disponible. Se registra
+    quién capturó el examen.
     """
     paciente = await db.get(Paciente, datos.paciente_id)
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado.")
-    quimico = None
-    if datos.quimico_id:
-        quimico = await db.get(Quimico, datos.quimico_id)
-        if not quimico or not quimico.activo:
-            raise HTTPException(status_code=400, detail="El químico indicado no existe o no está activo.")
+    quimico = await db.get(Quimico, datos.quimico_id) if datos.quimico_id else None
+    if not quimico or not quimico.activo:
+        raise HTTPException(status_code=400, detail="Selecciona el químico (activo) que realizó el examen.")
 
     examen = (await db.execute(
         select(ExamenOrina).where(
@@ -212,7 +211,7 @@ async def guardar_ego(
     for clave, valor in nuevos.items():
         setattr(examen, clave, valor)
     examen.observaciones = _limpiar(datos.observaciones)
-    examen.quimico_id = quimico.id if quimico else None
+    examen.quimico_id = quimico.id
     examen.capturado_por = current_user.id
     await db.commit()
     await db.refresh(examen)

@@ -14,7 +14,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton.jsx'
 
 // Captura del Examen General de Orina: cualquier usuario registra examen físico y microscópico
 // (y el químico mientras la tira no lo cargue) de las personas con tira del día. Al guardar, el examen
-// toma folio y su PDF queda disponible. El químico responsable es opcional: si se elige, firma el reporte.
+// toma folio y su PDF queda disponible. El químico que realizó el examen (autor del formato que se transcribe) es obligatorio y firma el reporte.
 
 const formatoFecha = (iso) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
@@ -66,7 +66,10 @@ export default function EgoPage() {
     setCargandoExamen(true)
     try {
       const res = await getEgo(pacienteId, fecha)
-      setExamen(res.data)
+      const datos = res.data
+      // Si solo hay un químico activo, es quien escribió el formato: se preselecciona
+      if (!datos.quimico_id && quimicos.length === 1) datos.quimico_id = quimicos[0].id
+      setExamen(datos)
     } catch (err) {
       console.error(err)
       notify.error('No se pudo abrir el examen.')
@@ -79,9 +82,13 @@ export default function EgoPage() {
 
   const guardar = async (e) => {
     e.preventDefault()
+    if (!examen.quimico_id) {
+      notify.warning('Selecciona el químico que realizó el examen.')
+      return
+    }
     setGuardando(true)
     try {
-      const payload = { ...examen, quimico_id: examen.quimico_id ? Number(examen.quimico_id) : null }
+      const payload = { ...examen, quimico_id: Number(examen.quimico_id) }
       const res = await guardarEgo(payload)
       setExamen(res.data)
       notify.success('Examen guardado. Ya puedes descargar el reporte.')
@@ -198,14 +205,15 @@ export default function EgoPage() {
                 </div>
                 <div className="min-w-[220px]">
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    Químico responsable <span className="font-normal normal-case text-slate-400">(opcional)</span>
+                    Químico que realizó el examen *
                   </label>
                   <select
                     value={examen.quimico_id || ''}
                     onChange={(e) => cambiar('quimico_id', e.target.value)}
+                    required
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:border-teal-500"
                   >
-                    <option value="">Sin químico (no se imprime)</option>
+                    <option value="">Selecciona químico…</option>
                     {quimicos.map((q) => (
                       <option key={q.id} value={q.id}>{q.nombre_completo}</option>
                     ))}

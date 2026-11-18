@@ -98,37 +98,38 @@ async def _headers_tecnico(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_tecnico_guarda_y_el_reporte_se_genera_sin_validacion(client, db_session, auth_headers, escenario):
-    """Al guardar, el examen toma folio y su PDF queda disponible; el químico responsable es opcional."""
+async def test_tecnico_transcribe_el_formato_del_quimico_y_el_reporte_sale_al_guardar(
+        client, db_session, auth_headers, escenario):
+    """El químico escribe el formato y el técnico lo transcribe: se elige al químico y al guardar hay folio y PDF."""
     headers = await _headers_tecnico(client, db_session)
     datos = {"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA_TECNICO, "color": "Amarillo",
              "bacterias": "Escasas"}
 
-    # Sin químico: se guarda, tiene folio y PDF
-    r = await client.put("/api/ego", json=datos, headers=headers)
+    # Sin indicar qué químico realizó el examen no se guarda (ni siquiera el administrador)
+    for h in (headers, auth_headers):
+        r = await client.put("/api/ego", json=datos, headers=h)
+        assert r.status_code == 400, r.text
+    r = await client.put("/api/ego", json={**datos, "quimico_id": 999999}, headers=headers)
+    assert r.status_code == 400
+
+    # Con el químico: el técnico guarda y el examen toma folio
+    r = await client.put("/api/ego", json={**datos, "quimico_id": escenario["quimico_id"]}, headers=headers)
     assert r.status_code == 200, r.text
     ego = r.json()
-    assert ego["color"] == "Amarillo" and ego["quimico_id"] is None
+    assert ego["quimico_id"] == escenario["quimico_id"] and ego["color"] == "Amarillo"
     assert ego["folio"] and ego["folio"].startswith("EGO-2032-")
 
-    # En la lista aparece capturado
+    # En la lista aparece capturado y el PDF se descarga
     r = await client.get("/api/ego/pendientes", params={"fecha": FECHA_TECNICO}, headers=headers)
     item = next(i for i in r.json()["items"] if i["paciente_id"] == escenario["paciente_id"])
     assert item["capturado"] is True
-
-    # El PDF se descarga (sin la línea de "Validado por")
     r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=headers)
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
 
-    # El técnico puede corregirlo
-    r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas"}, headers=headers)
+    # El técnico puede corregir una transcripción y el folio se conserva
+    r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas", "quimico_id": escenario["quimico_id"]},
+                         headers=headers)
     assert r.status_code == 200 and r.json()["bacterias"] == "Moderadas" and r.json()["folio"] == ego["folio"]
-
-    # Si se indica un químico activo, queda como responsable
-    r = await client.put("/api/ego", json={**datos, "quimico_id": escenario["quimico_id"]}, headers=headers)
-    assert r.status_code == 200 and r.json()["quimico_id"] == escenario["quimico_id"]
-    r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=auth_headers)
-    assert r.status_code == 200
 
 
 @pytest.mark.asyncio
