@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.models import Lote, Paciente, Prueba, Quimico, Resultado, User
 
 FECHA = "2032-02-02"
+FECHA_TECNICO = "2032-03-03"   # fecha propia: la captura del técnico no choca con exámenes ya validados
 
 
 @pytest_asyncio.fixture
@@ -86,19 +87,64 @@ async def test_requiere_quimico_activo(client, auth_headers, escenario):
     assert r.status_code == 400
 
 
-@pytest.mark.asyncio
-async def test_tecnico_no_puede_capturar(client, db_session, escenario):
+async def _headers_tecnico(client, db_session):
     from app.core.security import get_password_hash
     if not (await db_session.execute(select(User).where(User.username == "tecnico-ego"))).scalar_one_or_none():
         db_session.add(User(username="tecnico-ego", email="tecnico-ego@example.test", rol="tecnico",
                             hashed_password=get_password_hash("tecnico-ego-1"), nombre_completo="Técnico Sintético"))
         await db_session.commit()
     login = await client.post("/api/auth/login", data={"username": "tecnico-ego", "password": "tecnico-ego-1"})
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    r = await client.put("/api/ego", json={
-        "paciente_id": escenario["paciente_id"], "fecha_toma": FECHA, "quimico_id": escenario["quimico_id"],
-    }, headers=headers)
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_tecnico_captura_pero_no_valida(client, db_session, auth_headers, escenario):
+    """El técnico captura los valores; el examen queda por validar hasta que un químico lo revisa."""
+    headers = await _headers_tecnico(client, db_session)
+    datos = {"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA_TECNICO, "color": "Amarillo",
+             "bacterias": "Escasas"}
+
+    # Aunque mande un químico, el técnico no valida: se ignora y no hay folio
+    r = await client.put("/api/ego", json={**datos, "quimico_id": escenario["quimico_id"]}, headers=headers)
+    assert r.status_code == 200, r.text
+    ego = r.json()
+    assert ego["color"] == "Amarillo" and ego["bacterias"] == "Escasas"
+    assert ego["quimico_id"] is None and ego["folio"] is None and ego["por_validar"] is True
+
+    # En la lista aparece por validar, no como capturado
+    r = await client.get("/api/ego/pendientes", params={"fecha": FECHA_TECNICO}, headers=headers)
+    item = next(i for i in r.json()["items"] if i["paciente_id"] == escenario["paciente_id"])
+    assert item["capturado"] is False and item["por_validar"] is True
+
+    # Sin validación no hay PDF
+    r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=headers)
+    assert r.status_code == 409
+
+    # El técnico puede seguir corrigiendo mientras nadie lo valide
+    r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas"}, headers=headers)
+    assert r.status_code == 200 and r.json()["bacterias"] == "Moderadas" and r.json()["por_validar"] is True
+
+    # Un químico/administrador lo valida: ya tiene folio y deja de estar por validar
+    r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas", "quimico_id": escenario["quimico_id"]},
+                         headers=auth_headers)
+    assert r.status_code == 200 and r.json()["folio"] and r.json()["por_validar"] is False
+    r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=auth_headers)
+    assert r.status_code == 200
+
+    # Ya validado: el técnico no puede modificarlo
+    r = await client.put("/api/ego", json={**datos, "color": "Rojo"}, headers=headers)
     assert r.status_code == 403
+    r = await client.get("/api/ego", params={"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA_TECNICO},
+                         headers=headers)
+    assert r.json()["color"] == "Amarillo"
+
+
+@pytest.mark.asyncio
+async def test_validador_sigue_necesitando_quimico(client, auth_headers, escenario):
+    """Para el químico/administrador no cambia nada: sin químico activo no se guarda."""
+    r = await client.put("/api/ego", json={"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA},
+                         headers=auth_headers)
+    assert r.status_code == 400
 
 
 @pytest.mark.asyncio

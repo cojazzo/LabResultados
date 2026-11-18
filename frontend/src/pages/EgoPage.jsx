@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Calendar, CheckCircle2, Circle, Download, Droplets, Save } from 'lucide-react'
+import { Calendar, CheckCircle2, Circle, Clock, Download, Droplets, Save } from 'lucide-react'
 import {
   descargarEgoPdf,
   getEgo,
@@ -12,8 +12,9 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useNotification } from '../context/NotificationContext.jsx'
 import LoadingSkeleton from '../components/LoadingSkeleton.jsx'
 
-// Captura del Examen General de Orina: el químico registra examen físico y microscópico
-// (y el químico mientras la tira no lo cargue) de las personas con tira del día.
+// Captura del Examen General de Orina: el técnico o el químico registran examen físico y microscópico
+// (y el químico mientras la tira no lo cargue) de las personas con tira del día. Lo que captura un técnico
+// queda "por validar"; solo un químico (o administrador) lo valida, y solo entonces hay folio y PDF.
 
 const formatoFecha = (iso) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
@@ -21,8 +22,8 @@ const formatoFecha = (iso) =>
 export default function EgoPage() {
   const { user } = useAuth()
   const notify = useNotification()
-  const puedeCapturar = user && (user.is_superuser || ['admin', 'quimico'].includes(user.rol))
-
+  const esValidador = !!user && (user.is_superuser || ['admin', 'quimico'].includes(user.rol))
+  const puedeCapturar = !!user
   const [catalogo, setCatalogo] = useState({ secciones: [], campos: [] })
   const [quimicos, setQuimicos] = useState([])
   const [fecha, setFecha] = useState('')
@@ -67,7 +68,7 @@ export default function EgoPage() {
     try {
       const res = await getEgo(pacienteId, fecha)
       const datos = res.data
-      if (!datos.quimico_id && quimicos.length === 1) datos.quimico_id = quimicos[0].id
+      if (esValidador && !datos.quimico_id && quimicos.length === 1) datos.quimico_id = quimicos[0].id
       setExamen(datos)
     } catch (err) {
       console.error(err)
@@ -81,16 +82,18 @@ export default function EgoPage() {
 
   const guardar = async (e) => {
     e.preventDefault()
-    if (!examen.quimico_id) {
+    if (esValidador && !examen.quimico_id) {
       notify.warning('Selecciona el químico que valida el examen.')
       return
     }
     setGuardando(true)
     try {
-      const payload = { ...examen, quimico_id: Number(examen.quimico_id) }
+      // El técnico no valida: no manda químico y el examen queda por validar
+      const { quimico_id: _quimico, ...resto } = examen
+      const payload = esValidador ? { ...examen, quimico_id: Number(examen.quimico_id) } : resto
       const res = await guardarEgo(payload)
       setExamen(res.data)
-      notify.success('Examen guardado.')
+      notify.success(esValidador ? 'Examen guardado.' : 'Examen guardado. Queda por validar por un químico.')
       cargarPendientes(fecha)
     } catch (err) {
       console.error(err)
@@ -116,6 +119,10 @@ export default function EgoPage() {
   }
 
   const capturados = pendientes.filter((p) => p.capturado).length
+  const porValidar = pendientes.filter((p) => p.por_validar).length
+  // Un examen ya validado solo lo modifica un químico o administrador
+  const bloqueadoParaTecnico = !esValidador && !!examen?.folio
+  const editable = puedeCapturar && !bloqueadoParaTecnico
 
   return (
     <div className="space-y-6">
@@ -125,7 +132,7 @@ export default function EgoPage() {
             <Droplets className="w-5 h-5 text-teal-600" /> Examen General de Orina
           </h2>
           <p className="text-xs text-slate-400">
-            Se reporta EGO solo a las personas a las que el químico les capture el examen.
+            Se reporta EGO solo a las personas cuyo examen valida un químico.
           </p>
         </div>
         <div>
@@ -150,7 +157,8 @@ export default function EgoPage() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Personas con tira</h3>
             <span className="text-xs text-slate-400">
-              {capturados}/{pendientes.length} capturados
+              {capturados}/{pendientes.length} validados
+              {porValidar > 0 && <> · {porValidar} por validar</>}
             </span>
           </div>
           {cargandoLista ? (
@@ -171,7 +179,9 @@ export default function EgoPage() {
                     }`}
                   >
                     {p.capturado ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" title="Validado por un químico" />
+                    ) : p.por_validar ? (
+                      <Clock className="w-4 h-4 text-amber-500 shrink-0" title="Capturado, por validar" />
                     ) : (
                       <Circle className="w-4 h-4 text-slate-300 shrink-0" />
                     )}
@@ -202,27 +212,40 @@ export default function EgoPage() {
                     {examen.folio && <> · Folio {examen.folio}</>}
                   </p>
                 </div>
-                <div className="min-w-[220px]">
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    Validado por
-                  </label>
-                  <select
-                    value={examen.quimico_id || ''}
-                    onChange={(e) => cambiar('quimico_id', e.target.value)}
-                    disabled={!puedeCapturar}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:border-teal-500"
-                  >
-                    <option value="">Selecciona químico…</option>
-                    {quimicos.map((q) => (
-                      <option key={q.id} value={q.id}>{q.nombre_completo}</option>
-                    ))}
-                  </select>
-                </div>
+                {esValidador ? (
+                  <div className="min-w-[220px]">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                      Validado por
+                    </label>
+                    <select
+                      value={examen.quimico_id || ''}
+                      onChange={(e) => cambiar('quimico_id', e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:border-teal-500"
+                    >
+                      <option value="">Selecciona químico…</option>
+                      {quimicos.map((q) => (
+                        <option key={q.id} value={q.id}>{q.nombre_completo}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="min-w-[220px]">
+                    <p className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Validación</p>
+                    <p className={`text-sm font-medium ${examen.folio ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {examen.folio ? 'Validado por un químico' : 'Pendiente de validación por un químico'}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {!puedeCapturar && (
+              {!esValidador && !bloqueadoParaTecnico && (
+                <p className="text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  Puedes capturar y corregir los valores. El examen no se reporta hasta que un químico lo valide.
+                </p>
+              )}
+              {bloqueadoParaTecnico && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  Solo un químico o un administrador puede capturar el examen.
+                  Este examen ya fue validado por un químico; solo un químico o un administrador puede modificarlo.
                 </p>
               )}
 
@@ -256,7 +279,7 @@ export default function EgoPage() {
                                   value={examen[c.clave] ?? ''}
                                   onChange={(e) => cambiar(c.clave, e.target.value)}
                                   list={c.sugerencias.length ? `sug-${c.clave}` : undefined}
-                                  disabled={!puedeCapturar}
+                                  disabled={!editable}
                                   maxLength={c.clave === 'sedimento' ? 1000 : 100}
                                   className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-teal-500 disabled:bg-slate-50"
                                 />
@@ -284,7 +307,7 @@ export default function EgoPage() {
                   rows={3}
                   value={examen.observaciones ?? ''}
                   onChange={(e) => cambiar('observaciones', e.target.value)}
-                  disabled={!puedeCapturar}
+                  disabled={!editable}
                   maxLength={2000}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:border-teal-500 disabled:bg-slate-50"
                 />
@@ -300,13 +323,14 @@ export default function EgoPage() {
                     <Download className="w-4 h-4" /> Descargar PDF
                   </button>
                 )}
-                {puedeCapturar && (
+                {editable && (
                   <button
                     type="submit"
                     disabled={guardando}
                     className="px-6 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 text-sm"
                   >
-                    <Save className="w-4 h-4" /> {guardando ? 'Guardando…' : 'Guardar'}
+                    <Save className="w-4 h-4" />{' '}
+                    {guardando ? 'Guardando…' : esValidador ? 'Guardar' : 'Guardar (por validar)'}
                   </button>
                 )}
               </div>
