@@ -5,8 +5,8 @@ Las columnas se localizan por encabezado (fila 0 = parámetro, fila 1 = subcolum
 posición. Cada parámetro trae "Flag" (grado: " -", "+-", "1+", "normal", o el valor en pH y
 densidad) y "Conc" (concentración). La marca "*" del equipo no se usa: el sistema no interpreta.
 
-Los valores se precargan en `examenes_orina` sin químico asignado. El EGO solo se reporta cuando
-el químico lo captura y valida (ver app/routes/ego.py).
+Los valores se precargan en `examenes_orina` sin capturista. El EGO solo se reporta (folio y PDF) cuando
+una persona lo guarda en la pantalla de captura (ver app/routes/ego.py).
 """
 
 from datetime import date

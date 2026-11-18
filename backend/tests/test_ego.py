@@ -98,53 +98,44 @@ async def _headers_tecnico(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_tecnico_captura_pero_no_valida(client, db_session, auth_headers, escenario):
-    """El técnico captura los valores; el examen queda por validar hasta que un químico lo revisa."""
+async def test_tecnico_guarda_y_el_reporte_se_genera_sin_validacion(client, db_session, auth_headers, escenario):
+    """Al guardar, el examen toma folio y su PDF queda disponible; el químico responsable es opcional."""
     headers = await _headers_tecnico(client, db_session)
     datos = {"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA_TECNICO, "color": "Amarillo",
              "bacterias": "Escasas"}
 
-    # Aunque mande un químico, el técnico no valida: se ignora y no hay folio
-    r = await client.put("/api/ego", json={**datos, "quimico_id": escenario["quimico_id"]}, headers=headers)
+    # Sin químico: se guarda, tiene folio y PDF
+    r = await client.put("/api/ego", json=datos, headers=headers)
     assert r.status_code == 200, r.text
     ego = r.json()
-    assert ego["color"] == "Amarillo" and ego["bacterias"] == "Escasas"
-    assert ego["quimico_id"] is None and ego["folio"] is None and ego["por_validar"] is True
+    assert ego["color"] == "Amarillo" and ego["quimico_id"] is None
+    assert ego["folio"] and ego["folio"].startswith("EGO-2032-")
 
-    # En la lista aparece por validar, no como capturado
+    # En la lista aparece capturado
     r = await client.get("/api/ego/pendientes", params={"fecha": FECHA_TECNICO}, headers=headers)
     item = next(i for i in r.json()["items"] if i["paciente_id"] == escenario["paciente_id"])
-    assert item["capturado"] is False and item["por_validar"] is True
+    assert item["capturado"] is True
 
-    # Sin validación no hay PDF
+    # El PDF se descarga (sin la línea de "Validado por")
     r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=headers)
-    assert r.status_code == 409
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
 
-    # El técnico puede seguir corrigiendo mientras nadie lo valide
+    # El técnico puede corregirlo
     r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas"}, headers=headers)
-    assert r.status_code == 200 and r.json()["bacterias"] == "Moderadas" and r.json()["por_validar"] is True
+    assert r.status_code == 200 and r.json()["bacterias"] == "Moderadas" and r.json()["folio"] == ego["folio"]
 
-    # Un químico/administrador lo valida: ya tiene folio y deja de estar por validar
-    r = await client.put("/api/ego", json={**datos, "bacterias": "Moderadas", "quimico_id": escenario["quimico_id"]},
-                         headers=auth_headers)
-    assert r.status_code == 200 and r.json()["folio"] and r.json()["por_validar"] is False
+    # Si se indica un químico activo, queda como responsable
+    r = await client.put("/api/ego", json={**datos, "quimico_id": escenario["quimico_id"]}, headers=headers)
+    assert r.status_code == 200 and r.json()["quimico_id"] == escenario["quimico_id"]
     r = await client.get(f"/api/ego/{ego['id']}/pdf", headers=auth_headers)
     assert r.status_code == 200
 
-    # Ya validado: el técnico no puede modificarlo
-    r = await client.put("/api/ego", json={**datos, "color": "Rojo"}, headers=headers)
-    assert r.status_code == 403
-    r = await client.get("/api/ego", params={"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA_TECNICO},
-                         headers=headers)
-    assert r.json()["color"] == "Amarillo"
-
 
 @pytest.mark.asyncio
-async def test_validador_sigue_necesitando_quimico(client, auth_headers, escenario):
-    """Para el químico/administrador no cambia nada: sin químico activo no se guarda."""
-    r = await client.put("/api/ego", json={"paciente_id": escenario["paciente_id"], "fecha_toma": FECHA},
+async def test_examen_solo_precargado_no_tiene_folio_hasta_que_alguien_lo_guarda(client, auth_headers, escenario):
+    r = await client.get("/api/ego", params={"paciente_id": escenario["paciente_id"], "fecha_toma": "2032-04-04"},
                          headers=auth_headers)
-    assert r.status_code == 400
+    assert r.status_code == 200 and r.json()["id"] is None and r.json()["folio"] is None
 
 
 @pytest.mark.asyncio

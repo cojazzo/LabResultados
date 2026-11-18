@@ -1,9 +1,10 @@
 """
 Examen General de Orina (EGO).
 
-El técnico o el químico capturan el examen físico y microscópico (y el químico mientras la tira no lo llene)
-de las personas con tira del día. Lo que captura un técnico queda "por validar": solo un químico (o administrador)
-lo valida, y solo entonces hay folio y PDF. Solo se reporta EGO a quien tiene un examen validado.
+Cualquier usuario (técnico, químico o administrador) captura el examen físico y microscópico (y el químico
+mientras la tira no lo llene) de las personas con tira del día. Al guardar, el examen toma folio y su PDF queda
+disponible; el químico responsable es opcional y, si se indica, firma el reporte. Solo se reporta EGO a quien
+tiene un examen guardado.
 """
 
 from datetime import date
@@ -51,8 +52,8 @@ class ValoresEgo(BaseModel):
 class EgoGuardar(ValoresEgo):
     paciente_id: int
     fecha_toma: date
-    # Quién valida el reporte. Obligatorio para un químico o administrador; el técnico no valida
-    # (se ignora): lo que captura queda "por validar" hasta que un químico lo revise y lo guarde.
+    # Químico responsable (opcional): si se indica, firma el reporte ("Validado por"). Sin él, el reporte
+    # se genera igual al guardar, sin esa línea.
     quimico_id: Optional[int] = None
 
 class EgoResponse(ValoresEgo):
@@ -64,15 +65,13 @@ class EgoResponse(ValoresEgo):
     quimico_id: Optional[int] = None
     quimico_fuente: Optional[str] = None
     folio: Optional[str] = None
-    por_validar: bool = False   # capturado por un técnico, a la espera de que un químico lo valide
 
 class PendienteItem(BaseModel):
     paciente_id: int
     paciente: str
     identificacion: str
     examen_id: Optional[int] = None
-    capturado: bool             # validado por un químico (tiene folio y PDF)
-    por_validar: bool = False
+    capturado: bool             # guardado por una persona (tiene folio y PDF)
 
 class PendientesResponse(BaseModel):
     fecha: Optional[date] = None
@@ -81,14 +80,10 @@ class PendientesResponse(BaseModel):
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
 
-def _es_validador(user: User) -> bool:
-    """Un químico o administrador valida el EGO (de él depende que exista el folio y el PDF)."""
-    return bool(user.is_superuser or user.rol in ("admin", "quimico"))
+def _capturado(examen: Optional[ExamenOrina]) -> bool:
+    """Una persona guardó el examen (un examen precargado solo desde la tira aún no cuenta)."""
+    return bool(examen and examen.capturado_por is not None)
 
-
-def _por_validar(examen: Optional[ExamenOrina]) -> bool:
-    """Capturado por una persona (técnico) y sin validación de un químico."""
-    return bool(examen and examen.quimico_id is None and examen.capturado_por is not None)
 
 def _limpiar(valor: Optional[str]) -> Optional[str]:
     if valor is None:
@@ -106,9 +101,8 @@ def _respuesta(paciente: Paciente, fecha_toma: date, examen: Optional[ExamenOrin
         fecha_toma=fecha_toma,
         quimico_id=examen.quimico_id if examen else None,
         quimico_fuente=examen.quimico_fuente if examen else None,
-        # Folio y PDF solo existen cuando un químico validó el examen
-        folio=folio_ego(examen) if examen and examen.quimico_id else None,
-        por_validar=_por_validar(examen),
+        # Folio y PDF existen en cuanto una persona guarda el examen
+        folio=folio_ego(examen) if _capturado(examen) else None,
         observaciones=examen.observaciones if examen else None,
         **valores,
     )
@@ -130,7 +124,7 @@ async def get_pendientes(
 ):
     """
     Personas con tira UC-1000 (o con EGO ya capturado) en la fecha de toma indicada.
-    `capturado` = validado por un químico. Sin fecha, usa el día más reciente con tira.
+    `capturado` = ya lo guardó una persona. Sin fecha, usa el día más reciente con tira.
     """
     if fecha is None:
         fecha = (await db.execute(
@@ -147,7 +141,7 @@ async def get_pendientes(
         select(Paciente).where(Paciente.id.in_(con_tira.union(con_ego)))
     )).scalars().all()
 
-    # Un examen precargado desde la tira (sin químico) aún no cuenta como capturado
+    # Un examen precargado desde la tira (que nadie ha guardado) aún no cuenta como capturado
     examenes = {
         e.paciente_id: e
         for e in (await db.execute(select(ExamenOrina).where(ExamenOrina.fecha_toma == fecha))).scalars()
@@ -158,8 +152,7 @@ async def get_pendientes(
             paciente=nombre_completo_paciente(p),
             identificacion=p.identificacion,
             examen_id=examenes[p.id].id if p.id in examenes else None,
-            capturado=p.id in examenes and examenes[p.id].quimico_id is not None,
-            por_validar=_por_validar(examenes.get(p.id)),
+            capturado=_capturado(examenes.get(p.id)),
         ) for p in pacientes),
         key=lambda i: (i.capturado, i.paciente),
     )
@@ -190,31 +183,24 @@ async def guardar_ego(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Crea o actualiza el EGO de una persona en una fecha de toma.
-
-    - Químico o administrador: captura y VALIDA (debe indicar un químico activo); el examen queda con folio y PDF.
-    - Técnico: captura los valores, pero no valida. Queda "por validar" hasta que un químico lo revise y lo guarde,
-      y no puede modificar un examen que ya validó un químico.
+    Crea o actualiza el EGO de una persona en una fecha de toma. Cualquier usuario con sesión puede guardarlo y,
+    al guardar, el examen toma folio y su PDF queda disponible. El químico responsable es opcional: si se indica
+    (debe estar activo) aparece como "Validado por" en el reporte. Se registra quién capturó el examen.
     """
-    validador = _es_validador(current_user)
     paciente = await db.get(Paciente, datos.paciente_id)
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado.")
     quimico = None
-    if validador:
-        quimico = await db.get(Quimico, datos.quimico_id) if datos.quimico_id else None
+    if datos.quimico_id:
+        quimico = await db.get(Quimico, datos.quimico_id)
         if not quimico or not quimico.activo:
-            raise HTTPException(status_code=400, detail="Selecciona un químico activo que valide el examen.")
+            raise HTTPException(status_code=400, detail="El químico indicado no existe o no está activo.")
 
     examen = (await db.execute(
         select(ExamenOrina).where(
             ExamenOrina.paciente_id == datos.paciente_id, ExamenOrina.fecha_toma == datos.fecha_toma
         )
     )).scalar_one_or_none()
-    if examen is not None and examen.quimico_id is not None and not validador:
-        raise HTTPException(
-            status_code=403,
-            detail="Este examen ya fue validado por un químico; solo un químico o un administrador puede modificarlo.")
     if not examen:
         examen = ExamenOrina(paciente_id=datos.paciente_id, fecha_toma=datos.fecha_toma, quimico_fuente="manual")
         db.add(examen)
@@ -226,8 +212,7 @@ async def guardar_ego(
     for clave, valor in nuevos.items():
         setattr(examen, clave, valor)
     examen.observaciones = _limpiar(datos.observaciones)
-    if validador:
-        examen.quimico_id = quimico.id
+    examen.quimico_id = quimico.id if quimico else None
     examen.capturado_por = current_user.id
     await db.commit()
     await db.refresh(examen)
@@ -248,8 +233,8 @@ async def descargar_pdf(
     )).scalar_one_or_none()
     if not examen:
         raise HTTPException(status_code=404, detail="Examen no encontrado.")
-    if examen.quimico_id is None:
-        raise HTTPException(status_code=409, detail="El examen aún no está capturado y validado por un químico.")
+    if not _capturado(examen):
+        raise HTTPException(status_code=409, detail="El examen aún no se ha guardado.")
     pdf = generar_pdf_ego(examen)
     return Response(
         content=pdf,

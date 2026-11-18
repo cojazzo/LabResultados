@@ -119,10 +119,12 @@ def generar_pdf_ego(examen: ExamenOrina) -> bytes:
 
     # Pie
     quimico = examen.quimico
-    validado = f"{escape(quimico.nombre_completo)} (Cédula: {escape(quimico.cedula)})" if quimico else "—"
+    # El químico responsable es opcional: sin él no se imprime la línea de "Validado por"
+    validado = (f"<b>Validado por:</b> {escape(quimico.nombre_completo)} (Cédula: {escape(quimico.cedula)})"
+                if quimico else "")
     pie = Table([[
         Paragraph("<i>Este es un documento confidencial e intransferible emitido para uso médico.</i>", subtitle),
-        Paragraph(f"<b>Validado por:</b> {validado}", ParagraphStyle("V", parent=body, alignment=TA_RIGHT)),
+        Paragraph(validado, ParagraphStyle("V", parent=body, alignment=TA_RIGHT)),
     ]], colWidths=[364, 200])
     pie.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
     elements += [Spacer(1, 10), pie]

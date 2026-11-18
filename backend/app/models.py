@@ -283,7 +283,7 @@ class ExamenOrina(Base):
     """
     Examen General de Orina (EGO) de una persona en una fecha de toma.
 
-    Lo captura el técnico o el químico y lo valida un químico (quimico_id): examen físico (macroscópico) y microscópico (sedimento). El examen químico
+    Lo captura el técnico o el químico (capturado_por; quimico_id es el químico responsable, opcional): examen físico (macroscópico) y microscópico (sedimento). El examen químico
     corresponde a la tira reactiva; mientras la carga del UC-1000 no llene estos campos, el químico los
     puede capturar a mano. Solo se reporta EGO a quien tiene este registro.
     Los valores son texto porque la tira y el sedimento son semicuantitativos ("Negativo", "++", "0-2").
