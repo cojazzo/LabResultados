@@ -274,11 +274,12 @@ def generate_reportlab_pdf(pdf_path, context):
     address_str = context['lab_address'].replace(" Fideicomiso", "<br/>Fideicomiso")
     header_data = [
         [
-            Paragraph(f"<b>{context['lab_name']}</b>", title_style),
+            # Sin nombre del laboratorio: el logotipo institucional del fondo ya identifica al instituto
+            Paragraph(address_str, subtitle_style),
             Paragraph(f"<b>FOLIO DE REPORTE</b><br/><font size=10 color='#ef4444'>{context['folio']}</font>", ParagraphStyle('Folio', parent=body_style, alignment=TA_RIGHT))
         ],
         [
-            Paragraph(f"{address_str}<br/>Tel: {context['lab_phone']} | Email: {context['lab_email']}", subtitle_style),
+            Paragraph(f"Tel: {context['lab_phone']} | Email: {context['lab_email']}", subtitle_style),
             Paragraph(f"Fecha Emisión: {context['fecha_emision']}", ParagraphStyle('Emit', parent=subtitle_style, alignment=TA_RIGHT))
         ]
     ]

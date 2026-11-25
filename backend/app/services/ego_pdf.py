@@ -71,10 +71,11 @@ def _encabezado(settings, est: SimpleNamespace, folio_html: str, emision_html: s
                 espacio_superior: int = 120) -> list:
     """Encabezado institucional (nombre, dirección, folio), línea azul y título del documento."""
     address = settings.LAB_ADDRESS.replace(" Fideicomiso", "<br/>Fideicomiso")
+    # Sin nombre del laboratorio: el logotipo institucional del fondo ya identifica al instituto
     header = Table([
-        [Paragraph(f"<b>{settings.LAB_NAME}</b>", est.title),
+        [Paragraph(address, est.subtitle),
          Paragraph(f"<b>FOLIO DE REPORTE</b><br/>{folio_html}", est.derecha)],
-        [Paragraph(f"{address}<br/>Tel: {settings.LAB_PHONE} | Email: {settings.LAB_EMAIL}", est.subtitle),
+        [Paragraph(f"Tel: {settings.LAB_PHONE} | Email: {settings.LAB_EMAIL}", est.subtitle),
          Paragraph(emision_html, est.subtitulo_derecha)],
     ], colWidths=[400, 164])
     header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0)]))
