@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models import ExamenOrina, Paciente, Quimico, Resultado, User
-from app.services.ego_pdf import folio_ego, generar_pdf_ego
+from app.services.ego_pdf import folio_ego, generar_formato_ego_en_blanco, generar_pdf_ego
 from app.utils.ego import CLAVES, CLAVES_QUIMICO, SECCIONES, campos_como_dict
 from app.utils.validators import nombre_completo_paciente
 
@@ -216,6 +216,16 @@ async def guardar_ego(
     await db.commit()
     await db.refresh(examen)
     return _respuesta(paciente, datos.fecha_toma, examen)
+
+
+@router.get("/formato")
+async def descargar_formato(current_user: User = Depends(get_current_user)):
+    """Formato del EGO en blanco (encabezado institucional) para llenarlo a mano; el técnico lo transcribe."""
+    return Response(
+        content=generar_formato_ego_en_blanco(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="EGO_formato_en_blanco.pdf"'},
+    )
 
 
 @router.get("/{examen_id}/pdf")

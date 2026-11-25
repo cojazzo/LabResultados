@@ -253,3 +253,21 @@ async def test_tira_precarga_ego_sin_validarlo(client, auth_headers, db_session,
     await process_uc1000_csv(db, csv_tira([fila]), "sintetico.csv", None)
     r = await client.get("/api/ego", params={"paciente_id": pac.id, "fecha_toma": "2033-03-03"}, headers=auth_headers)
     assert r.json()["glucosa"] == "1+"
+
+
+@pytest.mark.asyncio
+async def test_formato_en_blanco_cabe_en_una_hoja_y_trae_los_estudios(client, auth_headers):
+    import io
+    from pypdf import PdfReader
+    from app.utils.ego import CAMPOS
+
+    assert (await client.get("/api/ego/formato")).status_code == 401
+    r = await client.get("/api/ego/formato", headers=auth_headers)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF")
+    pdf = PdfReader(io.BytesIO(r.content))
+    assert len(pdf.pages) == 1                                   # una sola hoja carta
+    texto = pdf.pages[0].extract_text()
+    assert "FORMATO DE REGISTRO" in texto and "Químico que realizó el examen" in texto
+    for _, estudio, *_ in CAMPOS:                                # todos los estudios del catálogo
+        assert estudio.split(" (")[0] in texto, estudio

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Calendar, CheckCircle2, Circle, Download, Droplets, Save } from 'lucide-react'
 import {
   descargarEgoPdf,
+  descargarFormatoEgo,
   getEgo,
   getEgoCampos,
   getEgoPendientes,
@@ -101,6 +102,21 @@ export default function EgoPage() {
     }
   }
 
+  const descargarFormato = async () => {
+    try {
+      const res = await descargarFormatoEgo()
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'EGO_formato_en_blanco.pdf'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      notify.error('No se pudo descargar el formato.')
+    }
+  }
+
   const descargar = async () => {
     try {
       const res = await descargarEgoPdf(examen.id)
@@ -129,6 +145,13 @@ export default function EgoPage() {
             Se reporta EGO a las personas cuyo examen se guarda: al guardar queda disponible el PDF.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={descargarFormato}
+          className="px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-2 text-sm font-medium"
+        >
+          <Download className="w-4 h-4" /> Formato en blanco (imprimir)
+        </button>
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
             Fecha de toma

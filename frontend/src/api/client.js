@@ -199,5 +199,6 @@ export const getEgo = (pacienteId, fechaToma) =>
 
 export const guardarEgo = (data) => client.put('/ego', data)
 
+export const descargarFormatoEgo = () => client.get('/ego/formato', { responseType: 'blob' })
 export const descargarEgoPdf = (id) =>
   client.get(`/ego/${id}/pdf`, { responseType: 'blob' })
