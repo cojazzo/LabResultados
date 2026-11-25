@@ -1,0 +1,3 @@
+
+# Los PDF son binarios: sin conversión de saltos de línea
+*.pdf binary
